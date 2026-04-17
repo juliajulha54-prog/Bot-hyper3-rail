@@ -1,0 +1,18 @@
+{
+    "votacoes": {
+        "Dan_vs_fis": {
+            "participantes": [
+                "Dan",
+                "fis"
+            ],
+            "votos": {},
+            "contagem": {
+                "Dan": 14,
+                "fis": 13
+            },
+            "encerrada": true
+        
+        
+        }
+    }
+}

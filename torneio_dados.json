@@ -1,0 +1,61 @@
+{
+    "quartas": [
+        [
+            "kerbvfx",
+            "mui",
+            "kerbvfx"
+        ],
+        [
+            "mendes",
+            "duardo",
+            "mendes"
+        ],
+        [
+            "RTZ",
+            "Lima",
+            "Lima"
+        ],
+        [
+            "Shino",
+            "Dan",
+            "Dan"
+        ],
+        [
+            "Arthur",
+            "fis",
+            "fis"
+        ]
+    ],
+    "semi": [
+        [
+            "fis",
+            "kerbvfx",
+            "EMPATE"
+        ],
+        [
+            "Lima",
+            "Dan",
+            "Dan"
+        ],
+        [
+            "mendes",
+            "fis",
+            "fis"
+        ]
+    ],
+    "final": [
+        "Dan",
+        "fis",
+        "Dan"
+    ],
+    "especial": [
+        "Retuurn",
+        "Gerald\u00e3o",
+        null
+    ],
+    "grande_final": [
+        "kerbvfx",
+        null,
+        null
+    ]
+}
