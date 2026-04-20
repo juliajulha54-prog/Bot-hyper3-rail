@@ -44,7 +44,7 @@ class AutoThread(commands.Cog):
             description=f"""
 **Status:** {status}
 **Canal:** {canal.mention if canal else 'Não definido'}
-**Nome:** `{config.get('nome', 'Thread de {{user}}')}`
+**Nome:** `{config.get('nome', 'Thread de {user}')}`
 **Mensagem:** `{config.get('mensagem', 'Padrão')[:50]}`
 **Fixar:** {'Sim' if config.get('fixar', True) else 'Não'}
 """
@@ -121,17 +121,18 @@ class AutoThread(commands.Cog):
         async def on_submit(self, interaction):
             await self.cog.update_config(interaction.guild.id, {"nome": self.nome.value})
             embed = await self.cog.build_embed(interaction.guild)
+
             view = AutoThread.Panel(self.cog)
             view.add_item(AutoThread.CanalSelect(self.cog))
 
             await interaction.response.edit_message(embed=embed, view=view)
 
     # ========================
-    # 💬 MODAL MSG (CORRIGIDO)
+    # 💬 MODAL MSG
     # ========================
     class MsgModal(discord.ui.Modal, title="Mensagem da Thread"):
         msg = discord.ui.TextInput(
-            label="Mensagem da thread",  # ✅ CORREÇÃO
+            label="Mensagem da thread",
             style=discord.TextStyle.paragraph
         )
 
@@ -142,6 +143,7 @@ class AutoThread(commands.Cog):
         async def on_submit(self, interaction):
             await self.cog.update_config(interaction.guild.id, {"mensagem": self.msg.value})
             embed = await self.cog.build_embed(interaction.guild)
+
             view = AutoThread.Panel(self.cog)
             view.add_item(AutoThread.CanalSelect(self.cog))
 
@@ -153,6 +155,7 @@ class AutoThread(commands.Cog):
     @app_commands.command(name="autothread", description="Abrir painel")
     async def autothread(self, interaction: discord.Interaction):
         embed = await self.build_embed(interaction.guild)
+
         view = self.Panel(self)
         view.add_item(self.CanalSelect(self))
 
@@ -166,9 +169,14 @@ class AutoThread(commands.Cog):
         if message.author.bot or not message.guild:
             return
 
+        print("📩 Mensagem detectada:", message.content)
+
         config = await self.get_config(message.guild.id)
 
-        if not config or not config.get("ativo"):
+        if not config:
+            return
+
+        if not config.get("ativo"):
             return
 
         if message.channel.id != config.get("channel_id"):
@@ -182,13 +190,18 @@ class AutoThread(commands.Cog):
 
         self.cooldown[message.author.id] = now
 
-        if message.thread:
+        # evita criar thread dentro de thread
+        if isinstance(message.channel, discord.Thread):
             return
 
         try:
-            nome = config.get("nome", "Thread de {user}") \
-                .replace("{user}", message.author.name) \
+            nome_base = config.get("nome", "Thread de {user}")
+
+            nome = (
+                nome_base
+                .replace("{user}", message.author.name)
                 .replace("{msg}", message.content[:20])
+            )
 
             thread = await message.create_thread(name=nome)
 
@@ -198,7 +211,10 @@ class AutoThread(commands.Cog):
                 await msg.pin()
 
         except Exception as e:
-            print("Erro:", e)
+            print("❌ Erro ao criar thread:", e)
+
+        # MUITO IMPORTANTE
+        await self.bot.process_commands(message)
 
 
 async def setup(bot):
