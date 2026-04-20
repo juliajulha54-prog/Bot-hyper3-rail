@@ -44,7 +44,7 @@ class AutoThread(commands.Cog):
             description=f"""
 **Status:** {status}
 **Canal:** {canal.mention if canal else 'Não definido'}
-**Nome:** `{config.get('nome', 'Thread de {user}')}`
+**Nome:** `{config.get('nome', 'Thread de {{user}}')}`
 **Mensagem:** `{config.get('mensagem', 'Padrão')[:50]}`
 **Fixar:** {'Sim' if config.get('fixar', True) else 'Não'}
 """
@@ -109,7 +109,10 @@ class AutoThread(commands.Cog):
     # 📝 MODAL NOME
     # ========================
     class NomeModal(discord.ui.Modal, title="Nome da Thread"):
-        nome = discord.ui.TextInput(label="Nome", placeholder="Thread de {user}")
+        nome = discord.ui.TextInput(
+            label="Nome da thread",
+            placeholder="Thread de {user}"
+        )
 
         def __init__(self, cog):
             super().__init__()
@@ -124,10 +127,13 @@ class AutoThread(commands.Cog):
             await interaction.response.edit_message(embed=embed, view=view)
 
     # ========================
-    # 💬 MODAL MSG
+    # 💬 MODAL MSG (CORRIGIDO)
     # ========================
     class MsgModal(discord.ui.Modal, title="Mensagem da Thread"):
-        msg = discord.ui.TextInput(style=discord.TextStyle.paragraph)
+        msg = discord.ui.TextInput(
+            label="Mensagem da thread",  # ✅ CORREÇÃO
+            style=discord.TextStyle.paragraph
+        )
 
         def __init__(self, cog):
             super().__init__()
@@ -168,7 +174,6 @@ class AutoThread(commands.Cog):
         if message.channel.id != config.get("channel_id"):
             return
 
-        # cooldown
         now = time.time()
         last = self.cooldown.get(message.author.id, 0)
 
