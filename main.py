@@ -102,13 +102,13 @@ async def detectar_nsfw(url):
         return False
 
 # ===============================
-# BOT + INTENTS (🔥 FIX PRINCIPAL)
+# BOT + INTENTS
 # ===============================
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
-intents.members = True  # 🔥 importante pra roles
+intents.members = True
 
 bot = commands.Bot(
     command_prefix=".",
@@ -185,7 +185,6 @@ async def on_ready():
 
     bot.loop.create_task(worker_fila())
 
-    # 🔥 FIX IMPORTANTE: sync de views persistentes
     for guild in bot.guilds:
         print(f"🔄 Guild ativa: {guild.name}")
 
@@ -194,7 +193,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 🔞 IMAGENS (IA)
+    # 🔞 IMAGENS
     if message.attachments:
         for anexo in message.attachments:
             if anexo.content_type and "image" in anexo.content_type:
@@ -230,7 +229,7 @@ async def on_message(message):
             mensagens_usuario[message.author.id].clear()
             return
 
-    # 🔥 SISTEMA ORIGINAL
+    # 🔥 SISTEMA ORIGINAL (mantido)
     if message.channel.id == CANAL_PERMITIDO_ID:
         permitido = apenas_anexo(message) or link_permitido(message.content)
 
@@ -284,12 +283,18 @@ async def carregar_cogs():
                 print(f"❌ Erro ao carregar {arquivo}: {e}")
 
 # ===============================
-# FIX PRINCIPAL DO DISCORD BOT
+# SLASH SYNC (🔥 AQUI QUE RESOLVE)
 # ===============================
 
 @bot.event
 async def setup_hook():
     await carregar_cogs()
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Slash sincronizados: {len(synced)}")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar slash: {e}")
 
 # ===============================
 # START
