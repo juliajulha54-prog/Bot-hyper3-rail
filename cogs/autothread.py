@@ -9,35 +9,41 @@ class AutoThread(commands.Cog):
         self.cache = {}
         self.cooldown = {}
 
-    @property
-    def db(self):
-        return self.bot.db["autothreads"]
+    # Função segura para acessar a coleção do banco
+    def get_db_collection(self):
+        if hasattr(self.bot, 'db') and self.bot.db is not None:
+            return self.bot.db.get("autothreads")
+        return None
 
     # ========================
-    # 🧠 CACHE
+    # 🧠 CACHE E DB
     # ========================
     async def get_config(self, guild_id):
         if guild_id in self.cache:
             return self.cache[guild_id]
 
-        if self.bot.db is None:
-            return None
+        collection = self.get_db_collection()
+        if collection is None:
+            return {}
 
-        data = await self.db.find_one({"guild_id": guild_id})
+        data = await collection.find_one({"guild_id": guild_id})
         self.cache[guild_id] = data
         return data
 
     async def update_config(self, guild_id, data):
-        await self.db.update_one(
-            {"guild_id": guild_id},
-            {"$set": data},
-            upsert=True
-        )
-        new_data = await self.db.find_one({"guild_id": guild_id})
-        self.cache[guild_id] = new_data
+        collection = self.get_db_collection()
+        if collection is not None:
+            await collection.update_one(
+                {"guild_id": guild_id},
+                {"$set": data},
+                upsert=True
+            )
+            # Atualiza o cache após salvar
+            new_data = await collection.find_one({"guild_id": guild_id})
+            self.cache[guild_id] = new_data
 
     # ========================
-    # 📊 EMBED STATUS (CORRIGIDO)
+    # 📊 EMBED STATUS
     # ========================
     async def build_embed(self, guild):
         config = await self.get_config(guild.id) or {}
@@ -45,8 +51,6 @@ class AutoThread(commands.Cog):
         canal_id = config.get("channel_id", 0)
         canal = guild.get_channel(canal_id)
         status = "🟢 Ativo" if config.get("ativo") else "🔴 Desativado"
-        
-        # Correção aqui: verificação para evitar erro de NoneType
         canal_texto = canal.mention if canal else 'Não definido'
 
         embed = discord.Embed(
@@ -144,8 +148,9 @@ class AutoThread(commands.Cog):
     # ========================
     @app_commands.command(name="autothread", description="Abrir painel de configuração")
     async def autothread(self, interaction: discord.Interaction):
-        if self.bot.db is None:
-            return await interaction.response.send_message("❌ Banco de dados offline.", ephemeral=True)
+        # Verifica se o banco de dados está online
+        if self.get_db_collection() is None:
+            return await interaction.response.send_message("❌ Banco de dados offline ou não conectado.", ephemeral=True)
             
         embed = await self.build_embed(interaction.guild)
         view = self.Panel(self)
@@ -192,4 +197,4 @@ class AutoThread(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(AutoThread(bot))
-        
+                
