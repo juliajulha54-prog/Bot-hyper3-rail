@@ -28,12 +28,25 @@ if not MONGO_URI:
     raise ValueError("MONGO_URI não configurado")
 
 # ===============================
-# CONEXÃO MONGO
+# CONEXÃO MONGO (COM LOGS)
 # ===============================
 
-mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-db = mongo_client["bot"]
-votacoes_db = db["votacoes"]
+try:
+    # O timeout de 5s evita que o bot fique travado tentando conectar para sempre
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    
+    # Força uma verificação de conexão
+    mongo_client.admin.command('ping')
+    
+    db = mongo_client["bot"]
+    votacoes_db = db["votacoes"]
+    print("✅ Conexão com o MongoDB estabelecida com sucesso!")
+except Exception as e:
+    print(f"❌ ERRO CRÍTICO: Não foi possível conectar ao MongoDB!")
+    print(f"Detalhes do erro: {e}")
+    # O bot continuará rodando, mas funções que usam DB podem falhar.
+    db = None
+    votacoes_db = None
 
 # ===============================
 # CONFIG
@@ -193,7 +206,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 🔞 IMAGENS
+    # 🔞 IMAGENS (NSFW CHECK)
     if message.attachments:
         for anexo in message.attachments:
             if anexo.content_type and "image" in anexo.content_type:
@@ -229,7 +242,7 @@ async def on_message(message):
             mensagens_usuario[message.author.id].clear()
             return
 
-    # 🔥 SISTEMA ORIGINAL (mantido)
+    # 🔥 SISTEMA ORIGINAL DE THREADS
     if message.channel.id == CANAL_PERMITIDO_ID:
         permitido = apenas_anexo(message) or link_permitido(message.content)
 
@@ -266,12 +279,12 @@ async def on_error(event, *args, **kwargs):
         f.write("\n========================\n")
 
 # ===============================
-# COGS
+# 📂 CARREGAMENTO DE COGS
 # ===============================
 
 async def carregar_cogs():
     if not os.path.exists("./cogs"):
-        print("❌ Pasta cogs não encontrada")
+        print("❌ Pasta './cogs' não encontrada.")
         return
 
     for arquivo in os.listdir("./cogs"):
@@ -283,18 +296,17 @@ async def carregar_cogs():
                 print(f"❌ Erro ao carregar {arquivo}: {e}")
 
 # ===============================
-# SLASH SYNC (🔥 AQUI QUE RESOLVE)
+# 🚀 SETUP HOOK (Sincronização Slash)
 # ===============================
 
 @bot.event
 async def setup_hook():
     await carregar_cogs()
-
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Slash sincronizados: {len(synced)}")
+        print(f"✅ {len(synced)} Slash Commands sincronizados!")
     except Exception as e:
-        print(f"❌ Erro ao sincronizar slash: {e}")
+        print(f"❌ Erro ao sincronizar slash commands: {e}")
 
 # ===============================
 # START
