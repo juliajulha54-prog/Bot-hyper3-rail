@@ -6,11 +6,9 @@ import time
 class AutoThread(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Removi a definição direta de self.db aqui para evitar o erro de NoneType
         self.cache = {}
         self.cooldown = {}
 
-    # Propriedade para pegar o banco de dados sempre atualizado da main
     @property
     def db(self):
         return self.bot.db["autothreads"]
@@ -35,12 +33,11 @@ class AutoThread(commands.Cog):
             {"$set": data},
             upsert=True
         )
-        # Atualiza o cache após salvar
         new_data = await self.db.find_one({"guild_id": guild_id})
         self.cache[guild_id] = new_data
 
     # ========================
-    # 📊 EMBED STATUS
+    # 📊 EMBED STATUS (CORRIGIDO)
     # ========================
     async def build_embed(self, guild):
         config = await self.get_config(guild.id) or {}
@@ -48,6 +45,9 @@ class AutoThread(commands.Cog):
         canal_id = config.get("channel_id", 0)
         canal = guild.get_channel(canal_id)
         status = "🟢 Ativo" if config.get("ativo") else "🔴 Desativado"
+        
+        # Correção aqui: verificação para evitar erro de NoneType
+        canal_texto = canal.mention if canal else 'Não definido'
 
         embed = discord.Embed(
             title="🧵 Autothread Panel",
@@ -55,7 +55,7 @@ class AutoThread(commands.Cog):
         )
         embed.description = f"""
 **Status:** {status}
-**Canal:** {canal.mention if canal else 'Não definido'}
+**Canal:** {canal_texto}
 **Nome:** `{config.get('nome', 'Thread de {user}')}`
 **Mensagem:** `{config.get('mensagem', 'Padrão')[:50]}`
 **Fixar:** {'Sim' if config.get('fixar', True) else 'Não'}
@@ -167,7 +167,6 @@ class AutoThread(commands.Cog):
         if message.channel.id != config.get("channel_id"):
             return
 
-        # Cooldown simples para evitar spam
         now = time.time()
         if now - self.cooldown.get(message.author.id, 0) < 5:
             return
@@ -193,3 +192,4 @@ class AutoThread(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(AutoThread(bot))
+        
