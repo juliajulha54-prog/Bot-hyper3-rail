@@ -67,10 +67,17 @@ class EasyThreads(commands.Cog):
     # ---------------- VIEW ----------------
 
     class View(discord.ui.View):
-        def __init__(self, cog, config_id):
+        def __init__(self, cog, config_id, owner_id):
             super().__init__(timeout=None)
             self.cog = cog
             self.config_id = config_id
+            self.owner_id = owner_id
+
+        async def interaction_check(self, interaction: discord.Interaction):
+            if interaction.user.id != self.owner_id:
+                await interaction.response.send_message("❌ Apenas quem criou pode usar.", ephemeral=True)
+                return False
+            return True
 
         async def update(self, interaction):
             cfg = await get_cfg(self.cog.bot, self.config_id)
@@ -104,8 +111,12 @@ class EasyThreads(commands.Cog):
         async def toggle(self, i, b):
             cfg = await get_cfg(self.cog.bot, self.config_id)
 
-            if not cfg.get("channel_id"):
-                return await i.response.send_message("❌ Defina o canal primeiro.", ephemeral=True)
+            # 🔥 BLOQUEIO
+            if not cfg.get("channel_id") or not cfg.get("nome") or not cfg.get("mensagem"):
+                return await i.response.send_message(
+                    "❌ Configure Canal, Nome e Mensagem antes de ativar.",
+                    ephemeral=True
+                )
 
             await set_cfg(self.cog.bot, self.config_id, {
                 "ativo": not cfg.get("ativo", False)
@@ -159,7 +170,6 @@ class EasyThreads(commands.Cog):
             await self.update(i)
             await i.response.defer()
 
-        # 🔒 NOVO BOTÃO
         @discord.ui.button(label="Bloquear Convites")
         async def block_invites(self, i, b):
             cfg = await get_cfg(self.cog.bot, self.config_id)
@@ -198,7 +208,7 @@ class EasyThreads(commands.Cog):
                 self.field: self.input.value
             })
 
-            view = EasyThreads.View(self.cog, self.config_id)
+            view = EasyThreads.View(self.cog, self.config_id, (await get_cfg(self.cog.bot, self.config_id))["owner_id"])
             await view.update(interaction)
 
             await interaction.response.send_message("✅ Atualizado.", ephemeral=True)
@@ -206,6 +216,7 @@ class EasyThreads(commands.Cog):
     # ---------------- COMANDOS ----------------
 
     @app_commands.command(name="autothread", description="Criar novo painel")
+    @app_commands.check(lambda i: i.user.guild_permissions.administrator)
     async def autothread(self, interaction: discord.Interaction):
 
         config_id = str(uuid.uuid4())
@@ -213,7 +224,8 @@ class EasyThreads(commands.Cog):
         await set_cfg(self.bot, config_id, {
             "guild_id": str(interaction.guild.id),
             "config_id": config_id,
-            "ativo": False
+            "ativo": False,
+            "owner_id": interaction.user.id
         })
 
         cfg = await get_cfg(self.bot, config_id)
@@ -223,17 +235,19 @@ class EasyThreads(commands.Cog):
         )
 
         msg = await interaction.original_response()
-        await msg.edit(view=self.View(self, config_id))
+        await msg.edit(view=self.View(self, config_id, interaction.user.id))
 
-    # 🔥 LISTA CORRIGIDA
     @app_commands.command(name="autothread_list", description="Listar configs ativas")
+    @app_commands.check(lambda i: i.user.guild_permissions.administrator)
     async def listar(self, interaction: discord.Interaction):
 
+        await interaction.response.defer()
+
         data = await get_all_cfg(self.bot, interaction.guild.id)
-        ativos = [cfg for cfg in data if cfg.get("ativo")]
+        ativos = [cfg for cfg in data if cfg.get("ativo")][:25]
 
         if not ativos:
-            return await interaction.response.send_message("❌ Nenhuma configuração ativa.")
+            return await interaction.followup.send("❌ Nenhuma configuração ativa.")
 
         options = [
             discord.SelectOption(
@@ -258,7 +272,7 @@ class EasyThreads(commands.Cog):
             async def editar(btn_i):
                 await btn_i.response.send_message(
                     embed=embed,
-                    view=self.View(self, cfg["config_id"]),
+                    view=self.View(self, cfg["config_id"], cfg["owner_id"]),
                     ephemeral=True
                 )
 
@@ -266,21 +280,21 @@ class EasyThreads(commands.Cog):
                 await delete_cfg(self.bot, cfg["config_id"])
                 await btn_i.response.send_message("🗑️ Excluído.", ephemeral=True)
 
-            btn1 = discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple)
-            btn2 = discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red)
+            b1 = discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple)
+            b2 = discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red)
 
-            btn1.callback = editar
-            btn2.callback = excluir
+            b1.callback = editar
+            b2.callback = excluir
 
-            action_view.add_item(btn1)
-            action_view.add_item(btn2)
+            action_view.add_item(b1)
+            action_view.add_item(b2)
 
             await i.followup.send(embed=embed, view=action_view, ephemeral=True)
 
         select.callback = callback
         view.add_item(select)
 
-        await interaction.response.send_message("Selecione uma configuração:", view=view)
+        await interaction.followup.send("Selecione uma configuração:", view=view)
 
     # ---------------- EVENTO ----------------
 
@@ -301,7 +315,6 @@ class EasyThreads(commands.Cog):
             if cfg.get("ignorebots") and m.author.bot:
                 continue
 
-            # 🔒 BLOQUEIO DE CONVITE
             if cfg.get("block_invites") and invite_regex.search(m.content):
                 try:
                     await m.delete()
