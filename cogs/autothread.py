@@ -3,112 +3,216 @@ from discord.ext import commands
 from discord import app_commands
 import uuid
 
-# ----------------- BANCO (Lógica de Múltiplos Docs) -----------------
+# ---------------- BANCO ----------------
 
-async def set_cfg(bot, config_id, update_dict):
+async def get_all_cfg(bot, guild_id):
     col = bot.db["autothreads"]
-    col.update_one({"config_id": config_id}, {"$set": update_dict}, upsert=True)
+    return list(col.find({"guild_id": str(guild_id)}))
+
 
 async def get_cfg(bot, config_id):
-    return bot.db["autothreads"].find_one({"config_id": config_id})
+    col = bot.db["autothreads"]
+    return col.find_one({"config_id": config_id})
 
-# ----------------- COG PRINCIPAL -----------------
+
+async def set_cfg(bot, config_id, data):
+    col = bot.db["autothreads"]
+    col.update_one(
+        {"config_id": config_id},
+        {"$set": data},
+        upsert=True
+    )
+
+
+# ---------------- COG ----------------
 
 class EasyThreads(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # --- COMANDOS ---
+    def status(self, v):
+        return "🟢 Ativado" if v else "🔴 Desativado"
 
-    @app_commands.command(name="autothread", description="Criar nova configuração")
-    async def autothread(self, interaction: discord.Interaction):
-        config_id = str(uuid.uuid4())[:8]
-        await set_cfg(self.bot, config_id, {
-            "guild_id": str(interaction.guild.id),
-            "ativo": False, "channel_id": None, "nome": "Thread de {user}",
-            "mensagem": "Sua thread foi criada.", "cooldown": 0,
-            "ignore_bots": True, "pin": False, "lock": False
-        })
-        await interaction.response.send_message(f"✅ Painel criado (ID: `{config_id}`)", 
-                                                view=self.MainView(self, config_id), ephemeral=True)
+    async def build_embed(self, guild, cfg):
+        canal = guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
 
-    @app_commands.command(name="list", description="Listar configurações")
-    async def list_configs(self, interaction: discord.Interaction):
-        configs = list(self.bot.db["autothreads"].find({"guild_id": str(interaction.guild.id)}))
-        if not configs: return await interaction.response.send_message("Nenhuma config.", ephemeral=True)
-        
-        embed = discord.Embed(title="🧵 Configurações Ativas", color=0x2b2d31)
-        for c in configs:
-            embed.add_field(name=f"ID: {c['config_id']}", value=f"Canal: <#{c.get('channel_id')}> | Ativo: {c.get('ativo')}", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return discord.Embed(
+            title="🧵 Easy Threads",
+            color=0x2b2d31
+        ).add_field(
+            name="Canal",
+            value=canal.mention if canal else "Não definido"
+        ).add_field(
+            name="Status",
+            value=self.status(cfg.get("ativo"))
+        ).add_field(
+            name="Opções",
+            value=(
+                f"Ignorar Bots: {self.status(cfg.get('ignorebots'))}\n"
+                f"Fixar: {self.status(cfg.get('pin'))}\n"
+                f"Privada: {self.status(cfg.get('private'))}"
+            ),
+            inline=False
+        )
 
-    # ----------------- VIEW E BOTÕES -----------------
+    # ---------------- VIEW ----------------
 
-    class MainView(discord.ui.View):
+    class View(discord.ui.View):
         def __init__(self, cog, config_id):
             super().__init__(timeout=None)
             self.cog = cog
             self.config_id = config_id
 
-        async def _toggle(self, interaction, field):
+        async def update(self, guild, message):
             cfg = await get_cfg(self.cog.bot, self.config_id)
-            val = not cfg.get(field, False)
-            await set_cfg(self.cog.bot, self.config_id, {field: val})
-            await interaction.response.send_message(f"✅ {field} definido como {val}", ephemeral=True, delete_after=2)
+            await message.edit(
+                embed=await self.cog.build_embed(guild, cfg),
+                view=self
+            )
 
-        @discord.ui.button(label="Canal", style=discord.ButtonStyle.gray, row=0)
-        async def canal(self, i, b):
-            select = discord.ui.ChannelSelect(callback=lambda sel: self.cog.bot.loop.create_task(self.set_chan(i, sel)))
-            view = discord.ui.View().add_item(select)
-            await i.response.send_message("Escolha o canal:", view=view, ephemeral=True)
+        @discord.ui.button(label="Canal")
+        async def canal(self, i: discord.Interaction, b):
+            view = discord.ui.View()
+            select = discord.ui.ChannelSelect()
 
-        async def set_chan(self, i, sel):
-            await set_cfg(self.cog.bot, self.config_id, {"channel_id": str(sel.values[0].id)})
-            await i.edit_original_response(content="✅ Canal definido!", view=None)
+            async def cb(x):
+                await x.response.defer(ephemeral=True)
 
-        @discord.ui.button(label="Ativar", style=discord.ButtonStyle.green, row=0)
-        async def toggle(self, i, b): await self._toggle(i, "ativo")
+                channel_id = list(x.data["resolved"]["channels"].keys())[0]
 
-        @discord.ui.button(label="Ignore Bots", style=discord.ButtonStyle.blurple, row=0)
-        async def bot_ign(self, i, b): await self._toggle(i, "ignore_bots")
+                await set_cfg(self.cog.bot, self.config_id, {
+                    "channel_id": channel_id
+                })
 
-        @discord.ui.button(label="Pin Thread", style=discord.ButtonStyle.blurple, row=1)
-        async def pin(self, i, b): await self._toggle(i, "pin")
+                await self.update(x.guild, i.message)
 
-        @discord.ui.button(label="Lock Thread", style=discord.ButtonStyle.blurple, row=1)
-        async def lock(self, i, b): await self._toggle(i, "lock")
-        
-        @discord.ui.button(label="Nome", style=discord.ButtonStyle.gray, row=2)
-        async def nome(self, i, b): await i.response.send_modal(EasyThreads.Modal(self.cog, self.config_id, "nome"))
+                await x.followup.send("Canal definido", ephemeral=True)
 
-        @discord.ui.button(label="Mensagem", style=discord.ButtonStyle.gray, row=2)
-        async def msg(self, i, b): await i.response.send_modal(EasyThreads.Modal(self.cog, self.config_id, "mensagem"))
+            select.callback = cb
+            view.add_item(select)
 
-    # ----------------- MODAL E EVENTO -----------------
+            await i.response.send_message("Escolha:", view=view, ephemeral=True)
 
-    class Modal(discord.ui.Modal):
-        def __init__(self, cog, cid, field):
-            super().__init__(title="Editar")
-            self.cog, self.cid, self.field = cog, cid, field
-            self.add_item(discord.ui.TextInput(label="Novo valor", custom_id="val"))
-        async def on_submit(self, i):
-            await set_cfg(self.cog.bot, self.cid, {self.field: i.data['components'][0]['components'][0]['value']})
-            await i.response.send_message("✅ Atualizado!", ephemeral=True)
+        @discord.ui.button(label="Ativar")
+        async def toggle(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "ativo": not cfg.get("ativo", False)
+            })
+
+            await self.update(i.guild, i.message)
+            await i.response.defer()
+
+        @discord.ui.button(label="Ignorar Bots")
+        async def ignore(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "ignorebots": not cfg.get("ignorebots", False)
+            })
+
+            await self.update(i.guild, i.message)
+            await i.response.defer()
+
+        @discord.ui.button(label="Fixar")
+        async def pin(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "pin": not cfg.get("pin", False)
+            })
+
+            await self.update(i.guild, i.message)
+            await i.response.defer()
+
+        @discord.ui.button(label="Privada")
+        async def priv(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "private": not cfg.get("private", False)
+            })
+
+            await self.update(i.guild, i.message)
+            await i.response.defer()
+
+    # ---------------- COMANDOS ----------------
+
+    @app_commands.command(name="autothread", description="Criar novo painel")
+    async def autothread(self, interaction: discord.Interaction):
+
+        config_id = str(uuid.uuid4())
+
+        await set_cfg(self.bot, config_id, {
+            "guild_id": str(interaction.guild.id),
+            "config_id": config_id,
+            "ativo": False
+        })
+
+        cfg = await get_cfg(self.bot, config_id)
+
+        msg = await interaction.response.send_message(
+            embed=await self.build_embed(interaction.guild, cfg)
+        )
+
+        message = await interaction.original_response()
+
+        await message.edit(view=self.View(self, config_id))
+
+    @app_commands.command(name="autothread_list", description="Listar configs")
+    async def listar(self, interaction: discord.Interaction):
+
+        data = await get_all_cfg(self.bot, interaction.guild.id)
+
+        if not data:
+            return await interaction.response.send_message("Nenhuma configuração.")
+
+        desc = ""
+        for i, cfg in enumerate(data, 1):
+            desc += f"{i}. Canal: `{cfg.get('channel_id')}` | {self.status(cfg.get('ativo'))}\n"
+
+        embed = discord.Embed(
+            title="Configs Easy Threads",
+            description=desc,
+            color=0x2b2d31
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+
+    # ---------------- EVENTO ----------------
 
     @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot or not message.guild: return
-        # Busca todas as configs do servidor
-        configs = self.bot.db["autothreads"].find({"guild_id": str(message.guild.id), "ativo": True})
-        for cfg in configs:
-            if str(message.channel.id) == str(cfg.get("channel_id")):
-                if cfg.get("ignore_bots") and message.author.bot: continue
-                
-                thread = await message.create_thread(name=cfg.get("nome", "Thread").replace("{user}", message.author.name))
-                msg = await thread.send(f"{message.author.mention} {cfg.get('mensagem')}")
-                if cfg.get("pin"): await msg.pin()
-                if cfg.get("lock"): await thread.edit(locked=True)
+    async def on_message(self, m):
+        if not m.guild:
+            return
+
+        data = await get_all_cfg(self.bot, m.guild.id)
+
+        for cfg in data:
+            if not cfg.get("ativo"):
+                continue
+
+            if str(m.channel.id) != str(cfg.get("channel_id")):
+                continue
+
+            if cfg.get("ignorebots") and m.author.bot:
+                continue
+
+            try:
+                thread = await m.create_thread(
+                    name=f"Thread de {m.author.name}"
+                )
+
+                msg = await thread.send(m.author.mention)
+
+                if cfg.get("pin"):
+                    await msg.pin()
+
+            except Exception as e:
+                print("Erro:", e)
+
 
 async def setup(bot):
     await bot.add_cog(EasyThreads(bot))
-        
