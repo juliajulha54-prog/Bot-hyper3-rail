@@ -83,7 +83,7 @@ class EasyThreads(commands.Cog):
         embed.add_field(
             name="📝 Definições",
             value=(
-                f"Nome: `{cfg.get('nome', 'Thread de {user}')}`\n"
+                f"Nome: `{cfg.get('nome', 'Thread de {{user}}')}`\n"
                 f"Mensagem: `{cfg.get('mensagem', 'Sua thread foi criada.')[:50]}`"
             ),
             inline=False
@@ -120,12 +120,20 @@ class EasyThreads(commands.Cog):
         async def canal_btn(self, interaction: discord.Interaction, button):
 
             view = discord.ui.View()
-            select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text])
+            select = discord.ui.ChannelSelect(
+                channel_types=[discord.ChannelType.text]
+            )
 
             async def select_callback(i: discord.Interaction):
                 await i.response.defer(ephemeral=True)
 
-                channel_id = i.data["values"][0]
+                try:
+                    # 🔥 forma correta (100% confiável)
+                    channel_id = list(i.data["resolved"]["channels"].keys())[0]
+                except:
+                    # fallback
+                    value = i.data["values"][0]
+                    channel_id = value if isinstance(value, str) else value["id"]
 
                 await set_cfg(
                     self.cog.bot,
@@ -214,7 +222,6 @@ class EasyThreads(commands.Cog):
 
         msg = await interaction.original_response()
 
-        # salva ID do painel
         await set_cfg(self.bot, interaction.guild.id, {
             "panel_message_id": str(msg.id)
         })
