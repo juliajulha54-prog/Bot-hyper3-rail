@@ -32,6 +32,25 @@ async def set_cfg(bot, guild_id, update_dict):
         print(f"Erro DB SET: {e}")
 
 
+# ---------------- UTIL ----------------
+
+async def get_panel_message(bot, guild):
+    cfg = await get_cfg(bot, guild.id)
+    msg_id = cfg.get("panel_message_id")
+
+    if not msg_id:
+        return None
+
+    for channel in guild.text_channels:
+        try:
+            msg = await channel.fetch_message(int(msg_id))
+            return msg
+        except:
+            continue
+
+    return None
+
+
 # ---------------- COG ----------------
 
 class EasyThreads(commands.Cog):
@@ -85,10 +104,17 @@ class EasyThreads(commands.Cog):
     # ---------------- VIEW ----------------
 
     class MainView(discord.ui.View):
-        def __init__(self, cog, panel_message):
+        def __init__(self, cog):
             super().__init__(timeout=None)
             self.cog = cog
-            self.panel_message = panel_message
+
+        async def update_panel(self, guild):
+            panel = await get_panel_message(self.cog.bot, guild)
+            if panel:
+                await panel.edit(
+                    embed=await self.cog.build_embed(guild),
+                    view=self
+                )
 
         @discord.ui.button(label="Canal", style=discord.ButtonStyle.gray)
         async def canal_btn(self, interaction: discord.Interaction, button):
@@ -107,11 +133,7 @@ class EasyThreads(commands.Cog):
                     {"channel_id": str(channel_id)}
                 )
 
-                # 🔥 ATUALIZA O PAINEL CORRETO
-                await self.panel_message.edit(
-                    embed=await self.cog.build_embed(i.guild),
-                    view=self
-                )
+                await self.update_panel(i.guild)
 
                 await i.followup.send("✅ Canal definido.", ephemeral=True)
 
@@ -142,31 +164,27 @@ class EasyThreads(commands.Cog):
                 {"ativo": not cfg.get("ativo", False)}
             )
 
-            await self.panel_message.edit(
-                embed=await self.cog.build_embed(interaction.guild),
-                view=self
-            )
+            await self.update_panel(interaction.guild)
 
         @discord.ui.button(label="Nome", style=discord.ButtonStyle.gray)
         async def nome_btn(self, interaction, button):
             await interaction.response.send_modal(
-                EasyThreads.InputModal(self.cog, "nome", self.panel_message)
+                EasyThreads.InputModal(self.cog, "nome")
             )
 
         @discord.ui.button(label="Mensagem", style=discord.ButtonStyle.gray)
         async def msg_btn(self, interaction, button):
             await interaction.response.send_modal(
-                EasyThreads.InputModal(self.cog, "mensagem", self.panel_message)
+                EasyThreads.InputModal(self.cog, "mensagem")
             )
 
     # ---------------- MODAL ----------------
 
     class InputModal(discord.ui.Modal):
-        def __init__(self, cog, field, panel_message):
+        def __init__(self, cog, field):
             super().__init__(title=f"Editar {field}")
             self.cog = cog
             self.field = field
-            self.panel_message = panel_message
 
             self.input = discord.ui.TextInput(label="Valor", required=True)
             self.add_item(self.input)
@@ -180,10 +198,8 @@ class EasyThreads(commands.Cog):
                 {self.field: self.input.value}
             )
 
-            await self.panel_message.edit(
-                embed=await self.cog.build_embed(interaction.guild),
-                view=EasyThreads.MainView(self.cog, self.panel_message)
-            )
+            view = EasyThreads.MainView(self.cog)
+            await view.update_panel(interaction.guild)
 
             await interaction.followup.send("✅ Atualizado.", ephemeral=True)
 
@@ -196,11 +212,14 @@ class EasyThreads(commands.Cog):
             embed=await self.build_embed(interaction.guild)
         )
 
-        # 🔥 pega a mensagem REAL
         msg = await interaction.original_response()
 
-        view = self.MainView(self, msg)
-        await msg.edit(view=view)
+        # salva ID do painel
+        await set_cfg(self.bot, interaction.guild.id, {
+            "panel_message_id": str(msg.id)
+        })
+
+        await msg.edit(view=self.MainView(self))
 
     # ---------------- EVENTO ----------------
 
