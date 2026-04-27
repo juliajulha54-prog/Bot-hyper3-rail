@@ -34,7 +34,7 @@ class EasyThreads(commands.Cog):
     async def build_embed(self, guild, cfg):
         canal = guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
 
-        embed = discord.Embed(title="🧵 Easy Threads", color=0x2b2d31)
+        embed = discord.Embed(title="🧵 Criação de novo canal AutoThreads", color=0x2b2d31)
 
         embed.add_field(name="📍 Canal", value=canal.mention if canal else "❌ Não definido", inline=True)
         embed.add_field(name="Status", value=self.status(cfg.get("ativo")), inline=True)
