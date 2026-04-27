@@ -2,15 +2,16 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import uuid
-import re
 
 # ---------------- BANCO ----------------
 
 async def get_all_cfg(bot, guild_id):
     return list(bot.db["autothreads"].find({"guild_id": str(guild_id)}))
 
+
 async def get_cfg(bot, config_id):
     return bot.db["autothreads"].find_one({"config_id": config_id})
+
 
 async def set_cfg(bot, config_id, data):
     bot.db["autothreads"].update_one(
@@ -18,10 +19,6 @@ async def set_cfg(bot, config_id, data):
         {"$set": data},
         upsert=True
     )
-
-async def delete_cfg(bot, config_id):
-    bot.db["autothreads"].delete_one({"config_id": config_id})
-
 
 # ---------------- COG ----------------
 
@@ -31,8 +28,6 @@ class EasyThreads(commands.Cog):
 
     def status(self, v):
         return "🟢 Ativado" if v else "🔴 Desativado"
-
-    # ---------------- EMBED ----------------
 
     async def build_embed(self, guild, cfg):
         canal = guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
@@ -65,17 +60,16 @@ class EasyThreads(commands.Cog):
             value=(
                 f"Ignorar Bots: {self.status(cfg.get('ignorebots'))}\n"
                 f"Fixar: {self.status(cfg.get('pin'))}\n"
-                f"Privada: {self.status(cfg.get('private'))}\n"
-                f"Bloquear Convites: {self.status(cfg.get('block_invites'))}"
+                f"Privada: {self.status(cfg.get('private'))}"
             ),
             inline=False
         )
 
         return embed
 
-    # ---------------- VIEW CONFIG ----------------
+    # ---------------- VIEW ----------------
 
-    class ConfigView(discord.ui.View):
+    class View(discord.ui.View):
         def __init__(self, cog, config_id):
             super().__init__(timeout=None)
             self.cog = cog
@@ -88,41 +82,111 @@ class EasyThreads(commands.Cog):
                 view=self
             )
 
-        @discord.ui.button(label="Excluir", style=discord.ButtonStyle.red)
-        async def delete(self, i: discord.Interaction, b):
-            await delete_cfg(self.cog.bot, self.config_id)
-            await i.response.edit_message(content="❌ Configuração excluída.", embed=None, view=None)
+        @discord.ui.button(label="Canal")
+        async def canal(self, i: discord.Interaction, b):
+            view = discord.ui.View()
+            select = discord.ui.ChannelSelect()
 
-    # ---------------- VIEW LIST ----------------
+            async def cb(x):
+                await x.response.defer(ephemeral=True)
 
-    class ListView(discord.ui.View):
-        def __init__(self, cog, data):
-            super().__init__(timeout=120)
-            self.cog = cog
-            self.data = data
+                channel_id = list(x.data["resolved"]["channels"].keys())[0]
 
-            options = [
-                discord.SelectOption(
-                    label=f"Config {i+1}",
-                    description=f"Canal: {cfg.get('channel_id')}",
-                    value=cfg["config_id"]
+                await set_cfg(self.cog.bot, self.config_id, {
+                    "channel_id": str(channel_id)
+                })
+
+                await self.update(i)
+                await x.followup.send("✅ Canal definido.", ephemeral=True)
+
+            select.callback = cb
+            view.add_item(select)
+
+            await i.response.send_message("Escolha o canal:", view=view, ephemeral=True)
+
+        @discord.ui.button(label="Ativar / Desativar", style=discord.ButtonStyle.blurple)
+        async def toggle(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            if not cfg.get("channel_id"):
+                return await i.response.send_message(
+                    "❌ Defina o canal primeiro.",
+                    ephemeral=True
                 )
-                for i, cfg in enumerate(data)
-            ]
 
-            self.select = discord.ui.Select(placeholder="Escolha uma config", options=options)
-            self.select.callback = self.select_callback
-            self.add_item(self.select)
+            await set_cfg(self.cog.bot, self.config_id, {
+                "ativo": not cfg.get("ativo", False)
+            })
 
-        async def select_callback(self, interaction: discord.Interaction):
-            config_id = self.select.values[0]
-            cfg = await get_cfg(self.cog.bot, config_id)
+            await self.update(i)
+            await i.response.defer()
 
-            embed = await self.cog.build_embed(interaction.guild, cfg)
+        @discord.ui.button(label="Nome")
+        async def nome(self, i, b):
+            await i.response.send_modal(
+                EasyThreads.Modal(self.cog, self.config_id, "nome", "Nome da Thread")
+            )
 
-            view = EasyThreads.ConfigView(self.cog, config_id)
+        @discord.ui.button(label="Mensagem")
+        async def mensagem(self, i, b):
+            await i.response.send_modal(
+                EasyThreads.Modal(self.cog, self.config_id, "mensagem", "Mensagem inicial")
+            )
 
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        @discord.ui.button(label="Ignorar Bots")
+        async def ignore(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "ignorebots": not cfg.get("ignorebots", False)
+            })
+
+            await self.update(i)
+            await i.response.defer()
+
+        @discord.ui.button(label="Fixar Msg")
+        async def pin(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "pin": not cfg.get("pin", False)
+            })
+
+            await self.update(i)
+            await i.response.defer()
+
+        @discord.ui.button(label="Privada")
+        async def priv(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "private": not cfg.get("private", False)
+            })
+
+            await self.update(i)
+            await i.response.defer()
+
+    # ---------------- MODAL ----------------
+
+    class Modal(discord.ui.Modal):
+        def __init__(self, cog, config_id, field, title):
+            super().__init__(title=title)
+            self.cog = cog
+            self.config_id = config_id
+            self.field = field
+
+            self.input = discord.ui.TextInput(label="Digite aqui", required=True)
+            self.add_item(self.input)
+
+        async def on_submit(self, interaction: discord.Interaction):
+            await set_cfg(self.cog.bot, self.config_id, {
+                self.field: self.input.value
+            })
+
+            view = EasyThreads.View(self.cog, self.config_id)
+            await view.update(interaction)
+
+            await interaction.response.send_message("✅ Atualizado.", ephemeral=True)
 
     # ---------------- COMANDOS ----------------
 
@@ -144,40 +208,25 @@ class EasyThreads(commands.Cog):
         )
 
         msg = await interaction.original_response()
-        await msg.edit(view=self.ConfigView(self, config_id))
+        await msg.edit(view=self.View(self, config_id))
 
-    # 🔥 LISTA COMPLETA
-    @app_commands.command(name="autothread_list", description="Listar configs ativas")
+    @app_commands.command(name="autothread_list", description="Listar configs")
     async def listar(self, interaction: discord.Interaction):
 
         data = await get_all_cfg(self.bot, interaction.guild.id)
 
-        ativos = [cfg for cfg in data if cfg.get("ativo")]
-
-        if not ativos:
-            return await interaction.response.send_message("❌ Nenhuma config ativa.")
+        if not data:
+            return await interaction.response.send_message("Nenhuma configuração.")
 
         desc = ""
-        for i, cfg in enumerate(ativos, 1):
-            canal = interaction.guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
+        for i, cfg in enumerate(data, 1):
+            desc += f"{i}. Canal: `{cfg.get('channel_id')}` | {self.status(cfg.get('ativo'))}\n"
 
-            desc += (
-                f"**{i}.** {canal.mention if canal else 'Sem canal'}\n"
-                f"Nome: `{cfg.get('nome','Thread')}`\n"
-                f"Mensagem: `{cfg.get('mensagem','...')[:30]}`\n"
-                f"{self.status(cfg.get('ativo'))}\n\n"
-            )
-
-        embed = discord.Embed(
-            title="📋 Configurações Ativas",
+        await interaction.response.send_message(embed=discord.Embed(
+            title="Configs",
             description=desc,
             color=0x2b2d31
-        )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=self.ListView(self, ativos)
-        )
+        ))
 
     # ---------------- EVENTO ----------------
 
@@ -194,12 +243,6 @@ class EasyThreads(commands.Cog):
 
             if str(m.channel.id) != str(cfg.get("channel_id")):
                 continue
-
-            # 🔒 bloqueador de convite
-            if cfg.get("block_invites"):
-                if re.search(r"(discord\.gg|discord\.com/invite)", m.content):
-                    await m.delete()
-                    return
 
             if cfg.get("ignorebots") and m.author.bot:
                 continue
