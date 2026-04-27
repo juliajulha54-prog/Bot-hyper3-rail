@@ -8,10 +8,8 @@ import uuid
 async def get_all_cfg(bot, guild_id):
     return list(bot.db["autothreads"].find({"guild_id": str(guild_id)}))
 
-
 async def get_cfg(bot, config_id):
     return bot.db["autothreads"].find_one({"config_id": config_id})
-
 
 async def set_cfg(bot, config_id, data):
     bot.db["autothreads"].update_one(
@@ -19,6 +17,10 @@ async def set_cfg(bot, config_id, data):
         {"$set": data},
         upsert=True
     )
+
+async def delete_cfg(bot, config_id):
+    bot.db["autothreads"].delete_one({"config_id": config_id})
+
 
 # ---------------- COG ----------------
 
@@ -34,17 +36,8 @@ class EasyThreads(commands.Cog):
 
         embed = discord.Embed(title="🧵 Easy Threads", color=0x2b2d31)
 
-        embed.add_field(
-            name="📍 Canal",
-            value=canal.mention if canal else "❌ Não definido",
-            inline=True
-        )
-
-        embed.add_field(
-            name="Status",
-            value=self.status(cfg.get("ativo")),
-            inline=True
-        )
+        embed.add_field(name="📍 Canal", value=canal.mention if canal else "❌ Não definido", inline=True)
+        embed.add_field(name="Status", value=self.status(cfg.get("ativo")), inline=True)
 
         embed.add_field(
             name="📝 Configurações",
@@ -89,7 +82,6 @@ class EasyThreads(commands.Cog):
 
             async def cb(x):
                 await x.response.defer(ephemeral=True)
-
                 channel_id = list(x.data["resolved"]["channels"].keys())[0]
 
                 await set_cfg(self.cog.bot, self.config_id, {
@@ -109,10 +101,7 @@ class EasyThreads(commands.Cog):
             cfg = await get_cfg(self.cog.bot, self.config_id)
 
             if not cfg.get("channel_id"):
-                return await i.response.send_message(
-                    "❌ Defina o canal primeiro.",
-                    ephemeral=True
-                )
+                return await i.response.send_message("❌ Defina o canal primeiro.", ephemeral=True)
 
             await set_cfg(self.cog.bot, self.config_id, {
                 "ativo": not cfg.get("ativo", False)
@@ -166,6 +155,17 @@ class EasyThreads(commands.Cog):
             await self.update(i)
             await i.response.defer()
 
+        # ✅ NOVO BOTÃO (única adição no painel)
+        @discord.ui.button(label="Excluir", style=discord.ButtonStyle.red, row=3)
+        async def delete(self, i: discord.Interaction, b):
+            await delete_cfg(self.cog.bot, self.config_id)
+
+            await i.response.edit_message(
+                content="❌ Configuração excluída.",
+                embed=None,
+                view=None
+            )
+
     # ---------------- MODAL ----------------
 
     class Modal(discord.ui.Modal):
@@ -210,23 +210,66 @@ class EasyThreads(commands.Cog):
         msg = await interaction.original_response()
         await msg.edit(view=self.View(self, config_id))
 
-    @app_commands.command(name="autothread_list", description="Listar configs")
+    # 🔥 LISTA CORRIGIDA
+    @app_commands.command(name="autothread_list", description="Listar configs ativas")
     async def listar(self, interaction: discord.Interaction):
 
         data = await get_all_cfg(self.bot, interaction.guild.id)
+        ativos = [cfg for cfg in data if cfg.get("ativo")]
 
-        if not data:
-            return await interaction.response.send_message("Nenhuma configuração.")
+        if not ativos:
+            return await interaction.response.send_message("❌ Nenhuma configuração ativa.")
 
-        desc = ""
-        for i, cfg in enumerate(data, 1):
-            desc += f"{i}. Canal: `{cfg.get('channel_id')}` | {self.status(cfg.get('ativo'))}\n"
+        options = []
+        for cfg in ativos:
+            canal = interaction.guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
 
-        await interaction.response.send_message(embed=discord.Embed(
-            title="Configs",
-            description=desc,
-            color=0x2b2d31
-        ))
+            options.append(
+                discord.SelectOption(
+                    label=canal.name if canal else "Sem canal",
+                    description=cfg.get("nome", "Thread"),
+                    value=cfg["config_id"]
+                )
+            )
+
+        view = discord.ui.View()
+        select = discord.ui.Select(placeholder="Selecione uma config", options=options)
+
+        async def callback(i: discord.Interaction):
+            cfg = await get_cfg(self.bot, select.values[0])
+
+            embed = await self.build_embed(i.guild, cfg)
+
+            action_view = discord.ui.View()
+
+            # botão editar
+            async def editar(btn_i):
+                await btn_i.response.send_message(
+                    embed=embed,
+                    view=self.View(self, cfg["config_id"]),
+                    ephemeral=True
+                )
+
+            # botão excluir
+            async def excluir(btn_i):
+                await delete_cfg(self.bot, cfg["config_id"])
+                await btn_i.response.send_message("🗑️ Excluído.", ephemeral=True)
+
+            action_view.add_item(discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple))
+            action_view.children[0].callback = editar
+
+            action_view.add_item(discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red))
+            action_view.children[1].callback = excluir
+
+            await i.response.send_message(embed=embed, view=action_view, ephemeral=True)
+
+        select.callback = callback
+        view.add_item(select)
+
+        await interaction.response.send_message(
+            "Selecione uma configuração:",
+            view=view
+        )
 
     # ---------------- EVENTO ----------------
 
