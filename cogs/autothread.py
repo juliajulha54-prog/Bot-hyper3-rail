@@ -3,14 +3,13 @@ from discord.ext import commands
 from discord import app_commands
 
 # ==========================================
-# 🛡️ FUNÇÕES SEGURAS DE BANCO DE DADOS
+# 🛡️ FUNÇÕES CORRIGIDAS DO BANCO DE DADOS
 # ==========================================
 async def get_config(bot, guild_id):
-    """Busca as configurações sem quebrar o bot se o DB falhar."""
-    if not hasattr(bot, 'db') or bot.db is None: return {}
+    if getattr(bot, 'db', None) is None: return {}
     try:
-        col = bot.db.get("autothreads")
-        if col is None: return {}
+        # Acesso correto ao MongoDB usando colchetes []
+        col = bot.db["autothreads"] 
         data = await col.find_one({"guild_id": guild_id})
         return data or {}
     except Exception as e:
@@ -18,17 +17,15 @@ async def get_config(bot, guild_id):
         return {}
 
 async def save_config(bot, guild_id, update_data):
-    """Salva as configurações de forma segura."""
-    if not hasattr(bot, 'db') or bot.db is None: return
+    if getattr(bot, 'db', None) is None: return
     try:
-        col = bot.db.get("autothreads")
-        if col is not None:
-            await col.update_one({"guild_id": guild_id}, {"$set": update_data}, upsert=True)
+        # Acesso correto ao MongoDB usando colchetes []
+        col = bot.db["autothreads"]
+        await col.update_one({"guild_id": guild_id}, {"$set": update_data}, upsert=True)
     except Exception as e:
         print(f"Erro no DB (SAVE): {e}")
 
 async def build_embed(bot, guild):
-    """Cria a mensagem do painel sempre atualizada."""
     config = await get_config(bot, guild.id)
     canal_id = config.get("channel_id", 0)
     canal = guild.get_channel(canal_id)
@@ -61,12 +58,12 @@ class ConfigModal(discord.ui.Modal):
         self.add_item(self.entrada)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # 1. Salva no banco
+        # Agora sim vai salvar corretamente!
         await save_config(self.bot, interaction.guild.id, {self.chave: self.entrada.value})
-        # 2. Atualiza o painel principal na mesma hora
+        
+        # Atualiza a mensagem na mesma hora
         embed_atualizado = await build_embed(self.bot, interaction.guild)
         await interaction.response.edit_message(embed=embed_atualizado)
-        # 3. Envia a confirmação invisível
         await interaction.followup.send(f"✅ {self.chave.capitalize()} alterado com sucesso!", ephemeral=True)
 
 # ==========================================
@@ -112,40 +109,30 @@ class AutoThreadCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="autothread", description="Abre o painel de configuração do AutoThread")
-    @app_commands.default_permissions(administrator=True) # Apenas admins podem usar
+    @app_commands.default_permissions(administrator=True)
     async def autothread_cmd(self, interaction: discord.Interaction):
-        # Envia o painel com a view e o embed
         embed = await build_embed(self.bot, interaction.guild)
         view = AutoThreadView(self.bot)
         await interaction.response.send_message(embed=embed, view=view)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignora bots, mensagens na DM ou mensagens dentro de threads
         if message.author.bot or not message.guild or isinstance(message.channel, discord.Thread):
             return
 
         config = await get_config(self.bot, message.guild.id)
-        
-        # Só executa se estiver ativo e for no canal certo
         if not config.get("ativo", False) or message.channel.id != config.get("channel_id"):
             return
 
         try:
-            # Substitui {user} pelo nome da pessoa
             nome_thread = config.get("nome", "Thread de {user}").replace("{user}", message.author.name)
-            
-            # Cria a thread a partir da mensagem enviada
             thread = await message.create_thread(name=nome_thread, auto_archive_duration=1440)
-            
-            # Envia a mensagem configurada dentro da thread marcando o usuário
             msg_texto = config.get("mensagem", "Sua thread foi criada.")
             if msg_texto:
                 await thread.send(f"{message.author.mention} {msg_texto}")
-
         except Exception as e:
             print(f"Erro ao criar thread: {e}")
 
 async def setup(bot):
     await bot.add_cog(AutoThreadCog(bot))
-    
+        
