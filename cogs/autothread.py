@@ -2,6 +2,9 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import uuid
+import re
+
+invite_regex = re.compile(r"(discord\.gg/|discord\.com/invite/)")
 
 # ---------------- BANCO ----------------
 
@@ -53,7 +56,8 @@ class EasyThreads(commands.Cog):
             value=(
                 f"Ignorar Bots: {self.status(cfg.get('ignorebots'))}\n"
                 f"Fixar: {self.status(cfg.get('pin'))}\n"
-                f"Privada: {self.status(cfg.get('private'))}"
+                f"Privada: {self.status(cfg.get('private'))}\n"
+                f"Bloquear Convites: {self.status(cfg.get('block_invites'))}"
             ),
             inline=False
         )
@@ -155,7 +159,18 @@ class EasyThreads(commands.Cog):
             await self.update(i)
             await i.response.defer()
 
-        # ✅ NOVO BOTÃO (única adição no painel)
+        # 🔒 NOVO BOTÃO
+        @discord.ui.button(label="Bloquear Convites")
+        async def block_invites(self, i, b):
+            cfg = await get_cfg(self.cog.bot, self.config_id)
+
+            await set_cfg(self.cog.bot, self.config_id, {
+                "block_invites": not cfg.get("block_invites", False)
+            })
+
+            await self.update(i)
+            await i.response.defer()
+
         @discord.ui.button(label="Excluir", style=discord.ButtonStyle.red, row=3)
         async def delete(self, i: discord.Interaction, b):
             await delete_cfg(self.cog.bot, self.config_id)
@@ -220,29 +235,26 @@ class EasyThreads(commands.Cog):
         if not ativos:
             return await interaction.response.send_message("❌ Nenhuma configuração ativa.")
 
-        options = []
-        for cfg in ativos:
-            canal = interaction.guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
-
-            options.append(
-                discord.SelectOption(
-                    label=canal.name if canal else "Sem canal",
-                    description=cfg.get("nome", "Thread"),
-                    value=cfg["config_id"]
-                )
+        options = [
+            discord.SelectOption(
+                label=f"{i+1}",
+                description=cfg.get("nome", "Thread"),
+                value=cfg["config_id"]
             )
+            for i, cfg in enumerate(ativos)
+        ]
 
         view = discord.ui.View()
         select = discord.ui.Select(placeholder="Selecione uma config", options=options)
 
         async def callback(i: discord.Interaction):
-            cfg = await get_cfg(self.bot, select.values[0])
+            await i.response.defer(ephemeral=True)
 
+            cfg = await get_cfg(self.bot, select.values[0])
             embed = await self.build_embed(i.guild, cfg)
 
             action_view = discord.ui.View()
 
-            # botão editar
             async def editar(btn_i):
                 await btn_i.response.send_message(
                     embed=embed,
@@ -250,26 +262,25 @@ class EasyThreads(commands.Cog):
                     ephemeral=True
                 )
 
-            # botão excluir
             async def excluir(btn_i):
                 await delete_cfg(self.bot, cfg["config_id"])
                 await btn_i.response.send_message("🗑️ Excluído.", ephemeral=True)
 
-            action_view.add_item(discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple))
-            action_view.children[0].callback = editar
+            btn1 = discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple)
+            btn2 = discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red)
 
-            action_view.add_item(discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red))
-            action_view.children[1].callback = excluir
+            btn1.callback = editar
+            btn2.callback = excluir
 
-            await i.response.send_message(embed=embed, view=action_view, ephemeral=True)
+            action_view.add_item(btn1)
+            action_view.add_item(btn2)
+
+            await i.followup.send(embed=embed, view=action_view, ephemeral=True)
 
         select.callback = callback
         view.add_item(select)
 
-        await interaction.response.send_message(
-            "Selecione uma configuração:",
-            view=view
-        )
+        await interaction.response.send_message("Selecione uma configuração:", view=view)
 
     # ---------------- EVENTO ----------------
 
@@ -289,6 +300,14 @@ class EasyThreads(commands.Cog):
 
             if cfg.get("ignorebots") and m.author.bot:
                 continue
+
+            # 🔒 BLOQUEIO DE CONVITE
+            if cfg.get("block_invites") and invite_regex.search(m.content):
+                try:
+                    await m.delete()
+                except:
+                    pass
+                return
 
             try:
                 nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)
