@@ -1,116 +1,84 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import time
 
 class AutoThread(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.cache = {}
-        self.cooldown = {}
-        # Garante que o db exista como dicionário para evitar o erro de inicialização
-        if not hasattr(self.bot, 'db'):
-            self.bot.db = {}
 
-    def get_collection(self):
-        # Acesso seguro à coleção
-        if isinstance(self.bot.db, dict):
-            return self.bot.db.get("autothreads")
-        return None
+    def get_col(self):
+        return self.bot.db.get("autothreads") if hasattr(self.bot, 'db') else None
 
-    async def get_config(self, guild_id):
-        if guild_id in self.cache: return self.cache[guild_id]
-        col = self.get_collection()
+    async def get_config(self, gid):
+        if gid in self.cache: return self.cache[gid]
+        col = self.get_col()
         if col is None: return {}
-        data = await col.find_one({"guild_id": guild_id})
-        self.cache[guild_id] = data
+        data = await col.find_one({"guild_id": gid}) or {}
+        self.cache[gid] = data
         return data
 
-    async def update_config(self, guild_id, data):
-        col = self.get_collection()
-        if col is not None:
-            await col.update_one({"guild_id": guild_id}, {"$set": data}, upsert=True)
-            self.cache[guild_id] = await col.find_one({"guild_id": guild_id})
+    async def update_config(self, gid, data):
+        col = self.get_col()
+        if col:
+            await col.update_one({"guild_id": gid}, {"$set": data}, upsert=True)
+            self.cache[gid] = await col.find_one({"guild_id": gid})
 
     async def build_embed(self, guild):
-        config = await self.get_config(guild.id) or {}
-        canal = guild.get_channel(config.get("channel_id", 0))
-        status = "🟢 Ativo" if config.get("ativo") else "🔴 Desativado"
-        embed = discord.Embed(title="🧵 Autothread Panel", color=discord.Color.blurple())
-        embed.description = f"**Status:** {status}\n**Canal:** {canal.mention if canal else 'Não definido'}\n**Nome:** `{config.get('nome', 'Thread de {user}')}`\n**Mensagem:** `{config.get('mensagem', 'Padrão')[:50]}`\n**Fixar:** {'Sim' if config.get('fixar', True) else 'Não'}"
-        return embed
+        cfg = await self.get_config(guild.id)
+        canal = guild.get_channel(cfg.get("channel_id", 0))
+        return discord.Embed(
+            title="🧵 Painel Autothread",
+            description=f"Status: {'🟢 Ativo' if cfg.get('ativo') else '🔴 Desativado'}\nCanal: {canal.mention if canal else 'Não definido'}\nNome: `{cfg.get('nome', 'Thread de {user}')}`\nMensagem: `{cfg.get('mensagem', 'Padrão')[:50]}`",
+            color=discord.Color.blurple()
+        )
 
-    # --- VIEWS E MODALS ---
-    class Panel(discord.ui.View):
+    # --- View com botões funcionais ---
+    class PanelView(discord.ui.View):
         def __init__(self, cog):
             super().__init__(timeout=None)
             self.cog = cog
 
-        @discord.ui.button(label="Ativar", style=discord.ButtonStyle.green)
-        async def ativar(self, i, b):
-            await self.cog.update_config(i.guild.id, {"ativo": True})
-            await i.response.edit_message(embed=await self.cog.build_embed(i.guild))
-
-        @discord.ui.button(label="Desativar", style=discord.ButtonStyle.red)
-        async def desativar(self, i, b):
-            await self.cog.update_config(i.guild.id, {"ativo": False})
+        @discord.ui.button(label="Ativar/Desativar", style=discord.ButtonStyle.secondary)
+        async def toggle(self, i, b):
+            cfg = await self.cog.get_config(i.guild.id)
+            new_state = not cfg.get("ativo", False)
+            await self.cog.update_config(i.guild.id, {"ativo": new_state})
             await i.response.edit_message(embed=await self.cog.build_embed(i.guild))
 
         @discord.ui.button(label="Nome", style=discord.ButtonStyle.blurple)
         async def nome(self, i, b):
-            await i.response.send_modal(AutoThread.NomeModal(self.cog))
+            await i.response.send_modal(AutoThread.ModalConfig(self.cog, "nome", "Novo nome da thread"))
 
-        @discord.ui.button(label="Mensagem", style=discord.ButtonStyle.gray)
+        @discord.ui.button(label="Mensagem", style=discord.ButtonStyle.blurple)
         async def msg(self, i, b):
-            await i.response.send_modal(AutoThread.MsgModal(self.cog))
+            await i.response.send_modal(AutoThread.ModalConfig(self.cog, "mensagem", "Nova mensagem"))
 
-    class CanalSelect(discord.ui.ChannelSelect):
-        def __init__(self, cog):
-            super().__init__(channel_types=[discord.ChannelType.text], placeholder="Selecione o canal...")
+    class ModalConfig(discord.ui.Modal):
+        def __init__(self, cog, key, label):
+            super().__init__(title="Configurar")
             self.cog = cog
-        async def callback(self, i):
-            await self.cog.update_config(i.guild.id, {"channel_id": self.values[0].id})
-            await i.response.edit_message(embed=await self.cog.build_embed(i.guild))
-
-    class NomeModal(discord.ui.Modal, title="Configurar Nome"):
-        def __init__(self, cog):
-            super().__init__()
-            self.cog = cog
-            self.input = discord.ui.TextInput(label="Novo Nome", placeholder="Thread de {user}")
+            self.key = key
+            self.input = discord.ui.TextInput(label=label, style=discord.TextStyle.paragraph)
             self.add_item(self.input)
-        async def on_submit(self, i):
-            await self.cog.update_config(i.guild.id, {"nome": self.input.value})
-            await i.response.edit_message(embed=await self.cog.build_embed(i.guild))
 
-    class MsgModal(discord.ui.Modal, title="Configurar Mensagem"):
-        def __init__(self, cog):
-            super().__init__()
-            self.cog = cog
-            self.input = discord.ui.TextInput(label="Mensagem", style=discord.TextStyle.paragraph)
-            self.add_item(self.input)
         async def on_submit(self, i):
-            await self.cog.update_config(i.guild.id, {"mensagem": self.input.value})
-            await i.response.edit_message(embed=await self.cog.build_embed(i.guild))
+            await self.cog.update_config(i.guild.id, {self.key: self.input.value})
+            await i.response.send_message(f"✅ {self.key.capitalize()} alterado com sucesso!", ephemeral=True)
+            # Atualiza o painel original
+            await i.message.edit(embed=await self.cog.build_embed(i.guild))
 
-    # --- COMANDO ---
     @app_commands.command(name="autothread")
     async def autothread(self, i: discord.Interaction):
-        view = self.Panel(self)
-        view.add_item(self.CanalSelect(self))
+        view = self.PanelView(self)
+        # Adiciona o seletor de canal dinamicamente
+        view.add_item(discord.ui.ChannelSelect(placeholder="Mudar canal...", callback=self.select_canal))
         await i.response.send_message(embed=await self.build_embed(i.guild), view=view)
 
-    @commands.Cog.listener()
-    async def on_message(self, m):
-        if m.author.bot or not m.guild: return
-        config = await self.get_config(m.guild.id)
-        if not config or not config.get("ativo") or m.channel.id != config.get("channel_id"): return
-        
-        # Lógica de criação de thread
-        try:
-            nome = config.get("nome", "Thread de {user}").replace("{user}", m.author.name)
-            thread = await m.create_thread(name=nome, auto_archive_duration=1440)
-            await thread.send(config.get("mensagem", "Thread criada."))
-        except Exception as e: print(e)
+    async def select_canal(self, i: discord.Interaction):
+        await self.update_config(i.guild.id, {"channel_id": i.data['values'][0]})
+        await i.response.send_message("✅ Canal alterado!", ephemeral=True)
+        await i.message.edit(embed=await self.build_embed(i.guild))
 
 async def setup(bot):
     await bot.add_cog(AutoThread(bot))
