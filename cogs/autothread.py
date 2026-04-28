@@ -5,6 +5,7 @@ import uuid
 import re
 
 invite_regex = re.compile(r"(discord\.gg/|discord\.com/invite/)")
+emoji_regex = re.compile(r"<a?:\w+:\d+>")  # 🔥 remove emoji custom se der erro
 
 # ---------------- BANCO ----------------
 
@@ -74,7 +75,6 @@ class EasyThreads(commands.Cog):
             self.owner_id = owner_id
 
         async def interaction_check(self, interaction: discord.Interaction):
-            # 🔥 AGORA TAMBÉM EXIGE ADMIN
             if not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message("❌ Comando restrito.", ephemeral=True)
                 return False
@@ -205,7 +205,6 @@ class EasyThreads(commands.Cog):
             self.config_id = config_id
             self.field = field
 
-            # 🔥 LIMITE AUMENTADO AQUI
             self.input = discord.ui.TextInput(
                 label="Digite aqui",
                 required=True,
@@ -226,7 +225,6 @@ class EasyThreads(commands.Cog):
 
             await view.update(interaction)
 
-            # 🔥 PREVIEW EPHEMERAL
             if self.field == "mensagem":
                 await interaction.response.send_message(
                     f"✅ Mensagem atualizada para:\n**{self.input.value}**",
@@ -352,9 +350,14 @@ class EasyThreads(commands.Cog):
 
                 thread = await m.create_thread(name=nome)
 
-                msg = await thread.send(
-                    f"{cfg.get('mensagem')}"
-                )
+                try:
+                    msg = await thread.send(cfg.get("mensagem"))
+                except Exception as e:
+                    print("ERRO AO ENVIAR MENSAGEM:", repr(e))
+
+                    # 🔥 fallback remove emoji custom
+                    safe_msg = emoji_regex.sub("", cfg.get("mensagem"))
+                    msg = await thread.send(safe_msg)
 
                 if cfg.get("pin"):
                     await msg.pin()
