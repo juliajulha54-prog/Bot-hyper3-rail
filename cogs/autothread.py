@@ -328,7 +328,7 @@ class EasyThreads(commands.Cog):
                 thread = await m.create_thread(name=nome)
 
                 msg = await thread.send(
-                    f"{m.author.mention} {cfg.get('mensagem', 'Bem-vindo!')}"
+                    f"{cfg.get('mensagem')}"
                 )
 
                 if cfg.get("pin"):
