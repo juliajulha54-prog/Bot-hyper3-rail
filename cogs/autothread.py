@@ -74,9 +74,15 @@ class EasyThreads(commands.Cog):
             self.owner_id = owner_id
 
         async def interaction_check(self, interaction: discord.Interaction):
-            if interaction.user.id != self.owner_id:
-                await interaction.response.send_message("❌ Apenas quem criou pode usar.", ephemeral=True)
+            # 🔥 AGORA TAMBÉM EXIGE ADMIN
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ Comando restrito.", ephemeral=True)
                 return False
+
+            if interaction.user.id != self.owner_id:
+                await interaction.response.send_message("❌ Apenas quem solicitou o painel pode usar.", ephemeral=True)
+                return False
+
             return True
 
         async def update(self, interaction):
@@ -100,7 +106,7 @@ class EasyThreads(commands.Cog):
                 })
 
                 await self.update(i)
-                await x.followup.send("✅ Canal definido.", ephemeral=True)
+                await x.followup.send("✅ Canal setado com sucesso.", ephemeral=True)
 
             select.callback = cb
             view.add_item(select)
@@ -111,7 +117,6 @@ class EasyThreads(commands.Cog):
         async def toggle(self, i, b):
             cfg = await get_cfg(self.cog.bot, self.config_id)
 
-            # 🔥 BLOQUEIO
             if not cfg.get("channel_id") or not cfg.get("nome") or not cfg.get("mensagem"):
                 return await i.response.send_message(
                     "❌ Configure Canal, Nome e Mensagem antes de ativar.",
@@ -200,7 +205,12 @@ class EasyThreads(commands.Cog):
             self.config_id = config_id
             self.field = field
 
-            self.input = discord.ui.TextInput(label="Digite aqui", required=True)
+            # 🔥 LIMITE AUMENTADO AQUI
+            self.input = discord.ui.TextInput(
+                label="Digite aqui",
+                required=True,
+                max_length=2000
+            )
             self.add_item(self.input)
 
         async def on_submit(self, interaction: discord.Interaction):
@@ -208,10 +218,25 @@ class EasyThreads(commands.Cog):
                 self.field: self.input.value
             })
 
-            view = EasyThreads.View(self.cog, self.config_id, (await get_cfg(self.cog.bot, self.config_id))["owner_id"])
+            view = EasyThreads.View(
+                self.cog,
+                self.config_id,
+                (await get_cfg(self.cog.bot, self.config_id))["owner_id"]
+            )
+
             await view.update(interaction)
 
-            await interaction.response.send_message("✅ Atualizado.", ephemeral=True)
+            # 🔥 PREVIEW EPHEMERAL
+            if self.field == "mensagem":
+                await interaction.response.send_message(
+                    f"✅ Mensagem atualizada para:\n**{self.input.value}**",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"✅ Nome atualizado para:\n**{self.input.value}**",
+                    ephemeral=True
+                )
 
     # ---------------- COMANDOS ----------------
 
