@@ -5,7 +5,7 @@ import uuid
 import re
 
 invite_regex = re.compile(r"(discord\.gg/|discord\.com/invite/)")
-emoji_regex = re.compile(r"<a?:\w+:\d+>")  # 🔥 remove emoji custom se der erro
+emoji_regex = re.compile(r"<a?:\w+:\d+>")
 
 # ---------------- BANCO ----------------
 
@@ -236,89 +236,6 @@ class EasyThreads(commands.Cog):
                     ephemeral=True
                 )
 
-    # ---------------- COMANDOS ----------------
-
-    @app_commands.command(name="autothread", description="Criar novo painel")
-    @app_commands.check(lambda i: i.user.guild_permissions.administrator)
-    async def autothread(self, interaction: discord.Interaction):
-
-        config_id = str(uuid.uuid4())
-
-        await set_cfg(self.bot, config_id, {
-            "guild_id": str(interaction.guild.id),
-            "config_id": config_id,
-            "ativo": False,
-            "owner_id": interaction.user.id
-        })
-
-        cfg = await get_cfg(self.bot, config_id)
-
-        await interaction.response.send_message(
-            embed=await self.build_embed(interaction.guild, cfg)
-        )
-
-        msg = await interaction.original_response()
-        await msg.edit(view=self.View(self, config_id, interaction.user.id))
-
-    @app_commands.command(name="autothread_list", description="Listar configs ativas")
-    @app_commands.check(lambda i: i.user.guild_permissions.administrator)
-    async def listar(self, interaction: discord.Interaction):
-
-        await interaction.response.defer()
-
-        data = await get_all_cfg(self.bot, interaction.guild.id)
-        ativos = [cfg for cfg in data if cfg.get("ativo")][:25]
-
-        if not ativos:
-            return await interaction.followup.send("❌ Nenhuma configuração ativa.")
-
-        options = [
-            discord.SelectOption(
-                label=f"{i+1}",
-                description=cfg.get("nome", "Thread"),
-                value=cfg["config_id"]
-            )
-            for i, cfg in enumerate(ativos)
-        ]
-
-        view = discord.ui.View()
-        select = discord.ui.Select(placeholder="Selecione uma config", options=options)
-
-        async def callback(i: discord.Interaction):
-            await i.response.defer(ephemeral=True)
-
-            cfg = await get_cfg(self.bot, select.values[0])
-            embed = await self.build_embed(i.guild, cfg)
-
-            action_view = discord.ui.View()
-
-            async def editar(btn_i):
-                await btn_i.response.send_message(
-                    embed=embed,
-                    view=self.View(self, cfg["config_id"], cfg["owner_id"]),
-                    ephemeral=True
-                )
-
-            async def excluir(btn_i):
-                await delete_cfg(self.bot, cfg["config_id"])
-                await btn_i.response.send_message("🗑️ Excluído.", ephemeral=True)
-
-            b1 = discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple)
-            b2 = discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red)
-
-            b1.callback = editar
-            b2.callback = excluir
-
-            action_view.add_item(b1)
-            action_view.add_item(b2)
-
-            await i.followup.send(embed=embed, view=action_view, ephemeral=True)
-
-        select.callback = callback
-        view.add_item(select)
-
-        await interaction.followup.send("Selecione uma configuração:", view=view)
-
     # ---------------- EVENTO ----------------
 
     @commands.Cog.listener()
@@ -347,17 +264,33 @@ class EasyThreads(commands.Cog):
 
             try:
                 nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)
-
                 thread = await m.create_thread(name=nome)
 
-                try:
-                    msg = await thread.send(cfg.get("mensagem"))
-                except Exception as e:
-                    print("ERRO AO ENVIAR MENSAGEM:", repr(e))
+                conteudo = cfg.get("mensagem")
 
-                    # 🔥 fallback remove emoji custom
-                    safe_msg = emoji_regex.sub("", cfg.get("mensagem"))
-                    msg = await thread.send(safe_msg)
+                # 🔥 remove caracteres invisíveis
+                conteudo = conteudo.replace("\u200b", "").replace("\uFEFF", "")
+
+                try:
+                    msg = await thread.send(conteudo)
+
+                except Exception as e:
+                    print("ERRO 1:", repr(e))
+
+                    try:
+                        safe_msg = emoji_regex.sub("", conteudo)
+                        msg = await thread.send(safe_msg)
+
+                    except Exception as e2:
+                        print("ERRO 2:", repr(e2))
+
+                        try:
+                            safe_msg2 = re.sub(r"[#*_`~]", "", safe_msg)
+                            msg = await thread.send(safe_msg2)
+
+                        except Exception as e3:
+                            print("ERRO FINAL:", repr(e3))
+                            return
 
                 if cfg.get("pin"):
                     await msg.pin()
