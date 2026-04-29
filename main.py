@@ -32,10 +32,7 @@ if not MONGO_URI:
 # ===============================
 
 try:
-    # O timeout de 5s evita que o bot fique travado tentando conectar para sempre
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    
-    # Força uma verificação de conexão
     mongo_client.admin.command('ping')
     
     db = mongo_client["bot"]
@@ -44,7 +41,6 @@ try:
 except Exception as e:
     print(f"❌ ERRO CRÍTICO: Não foi possível conectar ao MongoDB!")
     print(f"Detalhes do erro: {e}")
-    # O bot continuará rodando, mas funções que usam DB podem falhar.
     db = None
     votacoes_db = None
 
@@ -220,6 +216,8 @@ async def on_message(message):
                         )
                     except:
                         pass
+
+                    await bot.process_commands(message)
                     return
 
     # 🔥 ANTI-SPAM
@@ -240,6 +238,8 @@ async def on_message(message):
                 pass
 
             mensagens_usuario[message.author.id].clear()
+
+            await bot.process_commands(message)
             return
 
     # 🔥 SISTEMA ORIGINAL DE THREADS
@@ -251,6 +251,8 @@ async def on_message(message):
                 await message.delete()
             except:
                 pass
+
+            await bot.process_commands(message)
             return
 
         try:
@@ -264,6 +266,9 @@ async def on_message(message):
 
         except Exception as e:
             print("Erro ao criar tópico:", e)
+
+        await bot.process_commands(message)
+        return
 
     await bot.process_commands(message)
 
