@@ -47,7 +47,7 @@ class Filtro(commands.Cog):
                 txt.append(ch.mention if ch else f"`{cid}`")
 
             embed.description = "\n".join(txt) if txt else "❌ Nenhum canal"
-            embed.set_footer(text="Selecione um canal para configurar")
+            embed.set_footer(text="Selecione um canal")
             return embed
 
         ch_cfg = cfg["canais"].get(str(channel_id), {})
@@ -208,15 +208,19 @@ class Filtro(commands.Cog):
         if not m.guild or m.author.bot:
             return
 
-        if m.author.guild_permissions.manage_messages:
-            return
-
         cfg = await get_cfg(self.bot, m.guild.id)
         if not cfg:
+            await self.bot.process_commands(m)
             return
 
         ch_cfg = cfg.get("canais", {}).get(str(m.channel.id))
         if not ch_cfg:
+            await self.bot.process_commands(m)
+            return
+
+        # ignora staff
+        if m.author.guild_permissions.manage_messages:
+            await self.bot.process_commands(m)
             return
 
         content = m.content.strip()
@@ -251,7 +255,10 @@ class Filtro(commands.Cog):
             try:
                 await m.delete()
             except Exception as e:
-                print("Erro:", e)
+                print("Erro ao deletar:", e)
+
+        # 🔥 ESSENCIAL
+        await self.bot.process_commands(m)
 
 # ---------------- SETUP ---------------- #
 
