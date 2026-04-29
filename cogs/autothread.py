@@ -375,8 +375,8 @@ class EasyThreads(commands.Cog):
                     pass        
                 return        
       
-            try:        
-    nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)        
+            try:
+    nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)
 
     import asyncio
     await asyncio.sleep(0.5)
@@ -389,9 +389,7 @@ class EasyThreads(commands.Cog):
     except:
         pass
 
-    thread = await m.create_thread(name=nome)
-                  
-thread = await m.create_thread(name=nome)        
+    thread = await m.create_thread(name=nome)        
       
                 conteudo = cfg.get("mensagem")        
                 conteudo = conteudo.replace("\u200b", "").replace("\uFEFF", "")        
