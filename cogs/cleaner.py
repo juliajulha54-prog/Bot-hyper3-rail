@@ -1,11 +1,19 @@
 import discord
 from discord.ext import commands
 import re
+import json
 
-# IMPORTA CONFIG
-from config import CANAIS_PERMITIDOS, LINKS_PERMITIDOS
+# ---------------- LOAD CONFIG ---------------- #
+
+with open("config.json", "r", encoding="utf-8") as f:
+    CONFIG = json.load(f)
+
+CANAIS_PERMITIDOS = CONFIG.get("canais_permitidos", [])
+LINKS_PERMITIDOS = CONFIG.get("links_permitidos", [])
 
 link_regex = re.compile(r"https?://")
+
+# ---------------- COG ---------------- #
 
 class Cleaner(commands.Cog):
     def __init__(self, bot):
@@ -41,7 +49,7 @@ class Cleaner(commands.Cog):
         has_link = self.link_valido(content)
         has_sticker = len(m.stickers) > 0
 
-        # ❌ NÃO PERMITIDO
+        # ❌ texto puro / emoji
         if not has_attachment and not has_link:
             try:
                 await m.delete()
@@ -49,7 +57,7 @@ class Cleaner(commands.Cog):
                 pass
             return
 
-        # ❌ bloqueia sticker também
+        # ❌ figurinha
         if has_sticker:
             try:
                 await m.delete()
@@ -57,9 +65,9 @@ class Cleaner(commands.Cog):
                 pass
             return
 
-        # continua comandos
         await self.bot.process_commands(m)
 
-# SETUP
+# ---------------- SETUP ---------------- #
+
 async def setup(bot):
     await bot.add_cog(Cleaner(bot))
