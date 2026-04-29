@@ -377,7 +377,18 @@ class EasyThreads(commands.Cog):
       
             try:        
                 nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)        
-                thread = await m.create_thread(name=nome)        
+                import asyncio
+await asyncio.sleep(0.5)
+
+# verifica se a mensagem ainda existe
+try:
+    await m.channel.fetch_message(m.id)
+except discord.NotFound:
+    return  # mensagem foi apagada, não cria thread
+except:
+    pass
+                  
+thread = await m.create_thread(name=nome)        
       
                 conteudo = cfg.get("mensagem")        
                 conteudo = conteudo.replace("\u200b", "").replace("\uFEFF", "")        
