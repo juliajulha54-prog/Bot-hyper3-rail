@@ -4,8 +4,6 @@ from discord import app_commands
 import re
 import emoji
 
-# ---------------- REGEX ---------------- #
-
 allowed_links = re.compile(
     r"(https?://)?(www\.)?(streamable\.com|mega\.nz|drive\.google\.com|alightmotion\.com)"
 )
@@ -29,6 +27,18 @@ async def set_cfg(bot, guild_id, data):
 class Filtro(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.cache = {}  # 🔥 CACHE
+
+    # ---------------- CACHE ---------------- #
+
+    async def load_cache(self, guild_id):
+        cfg = await get_cfg(self.bot, guild_id)
+        self.cache[guild_id] = cfg or {"guild_id": str(guild_id), "canais": {}}
+
+    async def update_cache(self, guild_id):
+        await self.load_cache(guild_id)
+
+    # ---------------- STATUS ---------------- #
 
     def status(self, v):
         return "🟢" if v else "🔴"
@@ -47,7 +57,6 @@ class Filtro(commands.Cog):
                 txt.append(ch.mention if ch else f"`{cid}`")
 
             embed.description = "\n".join(txt) if txt else "❌ Nenhum canal"
-            embed.set_footer(text="Selecione um canal")
             return embed
 
         ch_cfg = cfg["canais"].get(str(channel_id), {})
@@ -78,30 +87,23 @@ class Filtro(commands.Cog):
             self.channel_id = channel_id
 
         async def refresh(self, interaction):
-            cfg = await get_cfg(self.cog.bot, self.guild_id)
-
-            embed = await self.cog.build_embed(
-                interaction.guild,
-                cfg,
-                self.channel_id
-            )
+            cfg = self.cog.cache.get(self.guild_id)
+            embed = await self.cog.build_embed(interaction.guild, cfg, self.channel_id)
 
             try:
                 await interaction.response.edit_message(embed=embed, view=self)
             except:
                 await interaction.message.edit(embed=embed, view=self)
 
-        # -------- SELECIONAR CANAL -------- #
-
         @discord.ui.button(label="Selecionar Canal")
-        async def select_channel(self, i: discord.Interaction, b):
+        async def select_channel(self, i, b):
             view = discord.ui.View()
             select = discord.ui.ChannelSelect()
 
             async def cb(x):
                 channel_id = list(x.data["resolved"]["channels"].keys())[0]
 
-                cfg = await get_cfg(self.cog.bot, self.guild_id)
+                cfg = self.cog.cache[self.guild_id]
                 canais = cfg.setdefault("canais", {})
 
                 if channel_id not in canais:
@@ -114,12 +116,13 @@ class Filtro(commands.Cog):
                     }
 
                 await set_cfg(self.cog.bot, self.guild_id, {"canais": canais})
+                await self.cog.update_cache(self.guild_id)
 
-                await x.response.send_message("✅ Canal selecionado", ephemeral=True)
+                await x.response.send_message("✅ Canal configurado", ephemeral=True)
 
                 new_view = Filtro.View(self.cog, self.guild_id, channel_id)
                 await i.message.edit(
-                    embed=await self.cog.build_embed(i.guild, cfg, channel_id),
+                    embed=await self.cog.build_embed(i.guild, self.cog.cache[self.guild_id], channel_id),
                     view=new_view
                 )
 
@@ -128,15 +131,14 @@ class Filtro(commands.Cog):
 
             await i.response.send_message("Escolha o canal:", view=view, ephemeral=True)
 
-        # -------- TOGGLES -------- #
-
         async def toggle(self, key):
-            cfg = await get_cfg(self.cog.bot, self.guild_id)
+            cfg = self.cog.cache[self.guild_id]
             ch_cfg = cfg["canais"][str(self.channel_id)]
 
             ch_cfg[key] = not ch_cfg.get(key, False)
 
             await set_cfg(self.cog.bot, self.guild_id, {"canais": cfg["canais"]})
+            await self.cog.update_cache(self.guild_id)
 
         @discord.ui.button(label="Texto")
         async def texto(self, i, b):
@@ -166,14 +168,10 @@ class Filtro(commands.Cog):
     # ---------------- CENTRAL ---------------- #
 
     async def send_panel(self, target, guild):
-        cfg = await get_cfg(self.bot, guild.id)
+        if guild.id not in self.cache:
+            await self.load_cache(guild.id)
 
-        if not cfg:
-            cfg = {
-                "guild_id": str(guild.id),
-                "canais": {}
-            }
-            await set_cfg(self.bot, guild.id, cfg)
+        cfg = self.cache[guild.id]
 
         view = self.View(self, guild.id)
 
@@ -184,10 +182,7 @@ class Filtro(commands.Cog):
                 ephemeral=True
             )
         else:
-            await target.send(
-                embed=await self.build_embed(guild, cfg),
-                view=view
-            )
+            await target.send(embed=await self.build_embed(guild, cfg), view=view)
 
     # ---------------- COMANDOS ---------------- #
 
@@ -196,8 +191,7 @@ class Filtro(commands.Cog):
     async def filtro(self, ctx):
         await self.send_panel(ctx, ctx.guild)
 
-    @app_commands.command(name="filtro", description="Configurar filtro")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.command(name="filtro")
     async def filtro_slash(self, interaction: discord.Interaction):
         await self.send_panel(interaction, interaction.guild)
 
@@ -208,35 +202,28 @@ class Filtro(commands.Cog):
         if not m.guild or m.author.bot:
             return
 
-        cfg = await get_cfg(self.bot, m.guild.id)
+        cfg = self.cache.get(m.guild.id)
         if not cfg:
-            await self.bot.process_commands(m)
-            return
+            return await self.bot.process_commands(m)
 
         ch_cfg = cfg.get("canais", {}).get(str(m.channel.id))
         if not ch_cfg:
-            await self.bot.process_commands(m)
-            return
+            return await self.bot.process_commands(m)
 
-        # ignora staff
         if m.author.guild_permissions.manage_messages:
-            await self.bot.process_commands(m)
-            return
+            return await self.bot.process_commands(m)
 
         content = m.content.strip()
 
         has_attachment = len(m.attachments) > 0
         has_link = bool(allowed_links.search(content))
-        has_embed = any(e.type in ("video", "image") for e in m.embeds)
         has_custom_emoji = bool(emoji_regex.search(content))
         has_unicode_emoji = emoji.emoji_count(content) > 0
         has_sticker = len(m.stickers) > 0
 
-        is_text = content != ""
-
         delete = False
 
-        if is_text and not ch_cfg.get("texto"):
+        if content and not ch_cfg.get("texto"):
             delete = True
 
         if (has_custom_emoji or has_unicode_emoji) and not ch_cfg.get("emoji"):
@@ -254,10 +241,9 @@ class Filtro(commands.Cog):
         if delete:
             try:
                 await m.delete()
-            except Exception as e:
-                print("Erro ao deletar:", e)
+            except:
+                pass
 
-        # 🔥 ESSENCIAL
         await self.bot.process_commands(m)
 
 # ---------------- SETUP ---------------- #
