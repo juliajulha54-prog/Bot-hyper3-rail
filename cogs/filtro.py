@@ -51,23 +51,38 @@ class Filtro(commands.Cog):
         embed.add_field(name="Status", value=self.status(cfg.get("ativo")), inline=True)
         embed.add_field(name="Canais", value="\n".join(canais_fmt), inline=False)
 
+        embed.add_field(
+            name="Permitido",
+            value=(
+                "• Imagens/Vídeos\n"
+                "• Arquivos\n"
+                "• Streamable\n"
+                "• Mega\n"
+                "• Drive\n"
+                "• Alight Motion"
+            ),
+            inline=False
+        )
+
         return embed
 
     # ---------------- VIEW ---------------- #
 
     class View(discord.ui.View):
         def __init__(self, cog, guild_id):
-            super().__init__(timeout=None)
+            super().__init__(timeout=120)
             self.cog = cog
             self.guild_id = guild_id
 
-        async def update(self, interaction):
+        async def refresh(self, interaction):
             cfg = await get_cfg(self.cog.bot, self.guild_id)
 
-            await interaction.response.edit_message(
-                embed=await self.cog.build_embed(interaction.guild, cfg),
-                view=self
-            )
+            embed = await self.cog.build_embed(interaction.guild, cfg)
+
+            try:
+                await interaction.response.edit_message(embed=embed, view=self)
+            except:
+                await interaction.message.edit(embed=embed, view=self)
 
         @discord.ui.button(label="Ativar / Desativar", style=discord.ButtonStyle.blurple)
         async def toggle(self, i: discord.Interaction, b):
@@ -77,7 +92,7 @@ class Filtro(commands.Cog):
                 "ativo": not cfg.get("ativo", False)
             })
 
-            await self.update(i)
+            await self.refresh(i)
 
         @discord.ui.button(label="Canais")
         async def canais(self, i: discord.Interaction, b):
@@ -102,6 +117,7 @@ class Filtro(commands.Cog):
                 })
 
                 await x.response.send_message(msg, ephemeral=True)
+                await self.refresh(i)
 
             select.callback = cb
             view.add_item(select)
@@ -112,27 +128,40 @@ class Filtro(commands.Cog):
                 ephemeral=True
             )
 
-    # ---------------- SLASH ---------------- #
+    # ---------------- FUNÇÃO CENTRAL ---------------- #
 
-    @app_commands.command(name="filtro", description="Configurar filtro de conteúdo")
-    @app_commands.check(lambda i: i.user.guild_permissions.administrator)
-    async def filtro(self, interaction: discord.Interaction):
-
-        cfg = await get_cfg(self.bot, interaction.guild.id)
+    async def send_panel(self, destination, guild):
+        cfg = await get_cfg(self.bot, guild.id)
 
         if not cfg:
             cfg = {
-                "guild_id": str(interaction.guild.id),
+                "guild_id": str(guild.id),
                 "ativo": False,
                 "canais": []
             }
-            await set_cfg(self.bot, interaction.guild.id, cfg)
+            await set_cfg(self.bot, guild.id, cfg)
 
-        await interaction.response.send_message(
-            embed=await self.build_embed(interaction.guild, cfg),
-            view=self.View(self, interaction.guild.id),
-            ephemeral=True
-        )
+        embed = await self.build_embed(guild, cfg)
+        view = self.View(self, guild.id)
+
+        if isinstance(destination, discord.Interaction):
+            await destination.response.send_message(embed=embed, view=view, ephemeral=True)
+        else:
+            await destination.send(embed=embed, view=view)
+
+    # ---------------- PREFIXO ---------------- #
+
+    @commands.command(name="filtro")
+    @commands.has_permissions(administrator=True)
+    async def filtro_prefix(self, ctx):
+        await self.send_panel(ctx, ctx.guild)
+
+    # ---------------- SLASH ---------------- #
+
+    @app_commands.command(name="filtro", description="Configurar filtro")
+    @app_commands.default_permissions(administrator=True)
+    async def filtro_slash(self, interaction: discord.Interaction):
+        await self.send_panel(interaction, interaction.guild)
 
     # ---------------- EVENTO ---------------- #
 
