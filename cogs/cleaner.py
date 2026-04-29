@@ -1,17 +1,25 @@
 import discord
 from discord.ext import commands
+import json
+import os
 
 class Cleaner(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         
-        # 📋 LISTA DE CANAIS MONITORADOS
-        # Adicione os IDs de todos os canais onde o bot deve apagar mensagens não permitidas
-        self.canais_permitidos = [
-            1486826627655663687
-            # 123456789012345678,  <- Exemplo de como adicionar mais canais
-            # 987654321098765432
-        ]
+        # 📁 ARQUIVO DE CONFIG
+        self.file = "config.json"
+
+        # cria o arquivo se não existir
+        if not os.path.exists(self.file):
+            with open(self.file, "w") as f:
+                json.dump({"cleaner_channels": []}, f, indent=4)
+
+        # carrega dados
+        with open(self.file, "r") as f:
+            data = json.load(f)
+
+        self.canais_permitidos = data.get("cleaner_channels", [])
         
         # 🔗 LINKS AUTORIZADOS
         self.links_autorizados = [
@@ -22,45 +30,79 @@ class Cleaner(commands.Cog):
             "cdn.nsb.gg"
         ]
 
+    # 💾 SALVAR NO CONFIG.JSON
+    def salvar_canais(self):
+        with open(self.file, "r") as f:
+            data = json.load(f)
+
+        data["cleaner_channels"] = self.canais_permitidos
+
+        with open(self.file, "w") as f:
+            json.dump(data, f, indent=4)
+
+    # 📌 ADICIONAR CANAL
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def setcleaner(self, ctx, canal: discord.TextChannel = None):
+        canal = canal or ctx.channel
+        canal_id = canal.id
+
+        if canal_id in self.canais_permitidos:
+            return await ctx.send("❌ Esse canal já está configurado.")
+
+        self.canais_permitidos.append(canal_id)
+        self.salvar_canais()
+
+        await ctx.send(f"✅ Canal {canal.mention} adicionado ao Cleaner.")
+
+    # 🗑️ REMOVER CANAL
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def removecleaner(self, ctx, canal: discord.TextChannel = None):
+        canal = canal or ctx.channel
+        canal_id = canal.id
+
+        if canal_id not in self.canais_permitidos:
+            return await ctx.send("❌ Esse canal não está configurado.")
+
+        self.canais_permitidos.remove(canal_id)
+        self.salvar_canais()
+
+        await ctx.send(f"🗑️ Canal {canal.mention} removido.")
+
+    # 🔍 VERIFICAR LINK
     def link_permitido(self, conteudo: str) -> bool:
         conteudo = conteudo.lower()
 
-        # Bloqueia convites de Discord imediatamente
         if "discord.gg" in conteudo or "discord.com/invite" in conteudo:
             return False
 
-        # Verifica se há links e se algum deles está na lista de autorizados
         if "http://" in conteudo or "https://" in conteudo:
             return any(link in conteudo for link in self.links_autorizados)
 
         return False
 
+    # 📎 VERIFICAR ANEXO
     def apenas_anexo(self, message: discord.Message) -> bool:
-        # Retorna True se a mensagem tiver pelo menos 1 arquivo/imagem anexado
         return len(message.attachments) > 0
 
+    # 🧹 EVENTO PRINCIPAL
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignora mensagens enviadas por bots (incluindo o próprio bot)
         if message.author.bot:
             return
 
-        # Verifica se a mensagem foi enviada em um dos canais da lista
         if message.channel.id in self.canais_permitidos:
             
-            # A mensagem é permitida se tiver anexo OU se contiver um link autorizado
             permitido = self.apenas_anexo(message) or self.link_permitido(message.content)
 
-            # Se não for permitida (texto puro, figurinha, emoji, etc), ela é deletada
             if not permitido:
                 try:
                     await message.delete()
                 except discord.Forbidden:
-                    print(f"⚠️ Erro: O bot não tem permissão de 'Gerenciar Mensagens' no canal {message.channel.name} (ID: {message.channel.id})")
+                    print(f"⚠️ Sem permissão no canal {message.channel.name}")
                 except discord.HTTPException as e:
-                    print(f"⚠️ Erro no Discord ao tentar deletar mensagem: {e}")
+                    print(f"⚠️ Erro ao deletar: {e}")
 
-# Função obrigatória para carregar a Cog no setup_hook
 async def setup(bot):
     await bot.add_cog(Cleaner(bot))
-                
