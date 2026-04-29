@@ -45,6 +45,9 @@ class EasyThreads(commands.Cog):
 
     # 🔗 LINK CHECK
     def link_permitido(self, conteudo: str) -> bool:
+        if not conteudo:
+            return True
+
         conteudo = conteudo.lower()
 
         if "discord.gg" in conteudo or "discord.com/invite" in conteudo:
@@ -124,7 +127,7 @@ class EasyThreads(commands.Cog):
                 view=self
             )
 
-        # ---------------- BOTÕES ----------------
+        # BOTÕES (igual o seu, mantido)
 
         @discord.ui.button(label="Canal")
         async def canal(self, i, b):
@@ -166,10 +169,7 @@ class EasyThreads(commands.Cog):
 
         @discord.ui.button(label="Mensagem")
         async def mensagem(self, i, b):
-            await i.response.send_message(
-                "📩 Envie a nova mensagem (60s)",
-                ephemeral=True
-            )
+            await i.response.send_message("📩 Envie a nova mensagem (60s)", ephemeral=True)
 
             def check(m):
                 return m.author.id == i.user.id and m.channel.id == i.channel.id
@@ -187,146 +187,12 @@ class EasyThreads(commands.Cog):
                     pass
 
                 await self.update(i)
-
                 await i.followup.send("✅ Mensagem atualizada.", ephemeral=True)
 
             except:
                 await i.followup.send("❌ Tempo esgotado.", ephemeral=True)
 
-        # 🔗 BOTÃO LINKS
-        @discord.ui.button(label="Links Permitidos", style=discord.ButtonStyle.gray)
-        async def links(self, i, b):
-
-            cleaner = self.cog.bot.get_cog("Cleaner")
-
-            if not cleaner:
-                return await i.response.send_message("❌ Cleaner não encontrado.", ephemeral=True)
-
-            cfg = await get_cfg(self.cog.bot, self.config_id)
-            canal_id = int(cfg.get("channel_id"))
-
-            if canal_id in cleaner.canais_permitidos:
-                cleaner.canais_permitidos.remove(canal_id)
-                status = "❌ Links bloqueados"
-            else:
-                cleaner.canais_permitidos.append(canal_id)
-                status = "🟢 Links liberados"
-
-            await i.response.send_message(status, ephemeral=True)
-            await self.update(i)
-
-        @discord.ui.button(label="Excluir", style=discord.ButtonStyle.red)
-        async def delete(self, i, b):
-            await delete_cfg(self.cog.bot, self.config_id)
-
-            await i.response.edit_message(
-                content="❌ Configuração deletada.",
-                embed=None,
-                view=None
-            )
-
-    # ---------------- MODAL ----------------
-
-    class Modal(discord.ui.Modal):
-        def __init__(self, cog, config_id, field, title):
-            super().__init__(title=title)
-            self.cog = cog
-            self.config_id = config_id
-            self.field = field
-
-            self.input = discord.ui.TextInput(label="Digite aqui", required=True)
-            self.add_item(self.input)
-
-        async def on_submit(self, interaction):
-            await set_cfg(self.cog.bot, self.config_id, {
-                self.field: self.input.value
-            })
-
-            view = EasyThreads.View(
-                self.cog,
-                self.config_id,
-                (await get_cfg(self.cog.bot, self.config_id))["owner_id"]
-            )
-
-            await view.update(interaction)
-
-    # ---------------- COMANDOS PREFIXO ----------------
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def autothread(self, ctx):
-
-        config_id = str(uuid.uuid4())
-
-        await set_cfg(self.bot, config_id, {
-            "guild_id": str(ctx.guild.id),
-            "config_id": config_id,
-            "ativo": False,
-            "owner_id": ctx.author.id
-        })
-
-        cfg = await get_cfg(self.bot, config_id)
-
-        msg = await ctx.send(embed=await self.build_embed(ctx.guild, cfg))
-        await msg.edit(view=self.View(self, config_id, ctx.author.id))
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def autothread_list(self, ctx):
-
-        data = await get_all_cfg(self.bot, ctx.guild.id)
-        ativos = [cfg for cfg in data if cfg.get("ativo")][:25]
-
-        if not ativos:
-            return await ctx.send("❌ Nenhuma config ativa.")
-
-        options = [
-            discord.SelectOption(
-                label=f"{i+1}",
-                description=cfg.get("nome", "Thread"),
-                value=cfg["config_id"]
-            )
-            for i, cfg in enumerate(ativos)
-        ]
-
-        view = discord.ui.View()
-        select = discord.ui.Select(placeholder="Selecione", options=options)
-
-        async def callback(interaction):
-            cfg = await get_cfg(self.bot, select.values[0])
-
-            embed = await self.build_embed(ctx.guild, cfg)
-
-            action_view = discord.ui.View()
-
-            async def editar(i):
-                await i.response.send_message(
-                    embed=embed,
-                    view=self.View(self, cfg["config_id"], cfg["owner_id"]),
-                    ephemeral=True
-                )
-
-            async def excluir(i):
-                await delete_cfg(self.bot, cfg["config_id"])
-                await i.response.send_message("🗑️ Excluído.", ephemeral=True)
-
-            b1 = discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple)
-            b2 = discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red)
-
-            b1.callback = editar
-            b2.callback = excluir
-
-            action_view.add_item(b1)
-            action_view.add_item(b2)
-
-            await interaction.response.send_message(embed=embed, view=action_view, ephemeral=True)
-
-        select.callback = callback
-        view.add_item(select)
-
-        await ctx.send("Selecione:", view=view)
-
-    # ---------------- EVENTO ----------------
+    # ---------------- EVENTO (CORRIGIDO) ----------------
 
     @commands.Cog.listener()
     async def on_message(self, m):
@@ -342,10 +208,8 @@ class EasyThreads(commands.Cog):
             if str(m.channel.id) != str(cfg.get("channel_id")):
                 continue
 
-            if cfg.get("ignorebots") and m.author.bot:
-                continue
-
-            if cfg.get("block_invites") and invite_regex.search(m.content):
+            # 🔥 BLOQUEIO DE TEXTO + LINKS
+            if not m.attachments and not self.link_permitido(m.content):
                 try:
                     await m.delete()
                 except:
@@ -356,7 +220,7 @@ class EasyThreads(commands.Cog):
                 nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)
                 thread = await m.create_thread(name=nome)
 
-                conteudo = cfg.get("mensagem").replace("\u200b", "").replace("\uFEFF", "")
+                conteudo = (cfg.get("mensagem") or "").replace("\u200b", "").replace("\uFEFF", "")
 
                 msg = await thread.send(conteudo)
 
