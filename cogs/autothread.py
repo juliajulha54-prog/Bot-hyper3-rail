@@ -376,17 +376,20 @@ class EasyThreads(commands.Cog):
                 return        
       
             try:        
-                nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)        
-                import asyncio
-await asyncio.sleep(0.5)
+    nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)        
 
-# verifica se a mensagem ainda existe
-try:
-    await m.channel.fetch_message(m.id)
-except discord.NotFound:
-    return  # mensagem foi apagada, não cria thread
-except:
-    pass
+    import asyncio
+    await asyncio.sleep(0.5)
+
+    # verifica se a mensagem ainda existe
+    try:
+        await m.channel.fetch_message(m.id)
+    except discord.NotFound:
+        return
+    except:
+        pass
+
+    thread = await m.create_thread(name=nome)
                   
 thread = await m.create_thread(name=nome)        
       
