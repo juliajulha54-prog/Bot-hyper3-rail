@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import uuid
 import re
 
@@ -44,7 +43,7 @@ class EasyThreads(commands.Cog):
     def status(self, v):
         return "🟢 Ativado" if v else "🔴 Desativado"
 
-    # 🔗 NOVO: valida links
+    # 🔗 LINK CHECK
     def link_permitido(self, conteudo: str) -> bool:
         conteudo = conteudo.lower()
 
@@ -59,10 +58,22 @@ class EasyThreads(commands.Cog):
     async def build_embed(self, guild, cfg):
         canal = guild.get_channel(int(cfg.get("channel_id"))) if cfg.get("channel_id") else None
 
-        embed = discord.Embed(title="🧵 Criação de novo canal AutoThreads", color=0x2b2d31)
+        embed = discord.Embed(
+            title="🧵 Criação de novo canal AutoThreads",
+            color=0x2b2d31
+        )
 
-        embed.add_field(name="📍 Canal", value=canal.mention if canal else "❌ Não definido", inline=True)
-        embed.add_field(name="Status", value=self.status(cfg.get("ativo")), inline=True)
+        embed.add_field(
+            name="📍 Canal",
+            value=canal.mention if canal else "❌ Não definido",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Status",
+            value=self.status(cfg.get("ativo")),
+            inline=True
+        )
 
         embed.add_field(
             name="📝 Configurações",
@@ -97,11 +108,11 @@ class EasyThreads(commands.Cog):
 
         async def interaction_check(self, interaction: discord.Interaction):
             if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("❌ Comando restrito.", ephemeral=True)
+                await interaction.response.send_message("❌ Sem permissão.", ephemeral=True)
                 return False
 
             if interaction.user.id != self.owner_id:
-                await interaction.response.send_message("❌ Apenas quem solicitou o painel pode usar.", ephemeral=True)
+                await interaction.response.send_message("❌ Só o criador pode usar.", ephemeral=True)
                 return False
 
             return True
@@ -113,8 +124,10 @@ class EasyThreads(commands.Cog):
                 view=self
             )
 
+        # ---------------- BOTÕES ----------------
+
         @discord.ui.button(label="Canal")
-        async def canal(self, i: discord.Interaction, b):
+        async def canal(self, i, b):
             view = discord.ui.View()
             select = discord.ui.ChannelSelect()
 
@@ -127,7 +140,7 @@ class EasyThreads(commands.Cog):
                 })
 
                 await self.update(i)
-                await x.followup.send("✅ Canal setado com sucesso.", ephemeral=True)
+                await x.followup.send("✅ Canal setado.", ephemeral=True)
 
             select.callback = cb
             view.add_item(select)
@@ -137,12 +150,6 @@ class EasyThreads(commands.Cog):
         @discord.ui.button(label="Ativar / Desativar", style=discord.ButtonStyle.blurple)
         async def toggle(self, i, b):
             cfg = await get_cfg(self.cog.bot, self.config_id)
-
-            if not cfg.get("channel_id") or not cfg.get("nome") or not cfg.get("mensagem"):
-                return await i.response.send_message(
-                    "❌ Configure Canal, Nome e Mensagem antes de ativar.",
-                    ephemeral=True
-                )
 
             await set_cfg(self.cog.bot, self.config_id, {
                 "ativo": not cfg.get("ativo", False)
@@ -160,7 +167,7 @@ class EasyThreads(commands.Cog):
         @discord.ui.button(label="Mensagem")
         async def mensagem(self, i, b):
             await i.response.send_message(
-                "📩 Envie a nova mensagem no chat (você tem 60 segundos).",
+                "📩 Envie a nova mensagem (60s)",
                 ephemeral=True
             )
 
@@ -181,18 +188,12 @@ class EasyThreads(commands.Cog):
 
                 await self.update(i)
 
-                await i.followup.send(
-                    f"✅ Mensagem atualizada para:\n**{msg.content}**",
-                    ephemeral=True
-                )
+                await i.followup.send("✅ Mensagem atualizada.", ephemeral=True)
 
             except:
-                await i.followup.send(
-                    "❌ Tempo esgotado.",
-                    ephemeral=True
-                )
+                await i.followup.send("❌ Tempo esgotado.", ephemeral=True)
 
-        # 🔗 BOTÃO NOVO
+        # 🔗 BOTÃO LINKS
         @discord.ui.button(label="Links Permitidos", style=discord.ButtonStyle.gray)
         async def links(self, i, b):
 
@@ -209,17 +210,17 @@ class EasyThreads(commands.Cog):
                 status = "❌ Links bloqueados"
             else:
                 cleaner.canais_permitidos.append(canal_id)
-                status = "🟢 Links permitidos"
+                status = "🟢 Links liberados"
 
             await i.response.send_message(status, ephemeral=True)
             await self.update(i)
 
-        @discord.ui.button(label="Excluir", style=discord.ButtonStyle.red, row=3)
+        @discord.ui.button(label="Excluir", style=discord.ButtonStyle.red)
         async def delete(self, i, b):
             await delete_cfg(self.cog.bot, self.config_id)
 
             await i.response.edit_message(
-                content="❌ Configuração excluída.",
+                content="❌ Configuração deletada.",
                 embed=None,
                 view=None
             )
@@ -233,10 +234,10 @@ class EasyThreads(commands.Cog):
             self.config_id = config_id
             self.field = field
 
-            self.input = discord.ui.TextInput(label="Digite aqui", required=True, max_length=2000)
+            self.input = discord.ui.TextInput(label="Digite aqui", required=True)
             self.add_item(self.input)
 
-        async def on_submit(self, interaction: discord.Interaction):
+        async def on_submit(self, interaction):
             await set_cfg(self.cog.bot, self.config_id, {
                 self.field: self.input.value
             })
@@ -249,7 +250,83 @@ class EasyThreads(commands.Cog):
 
             await view.update(interaction)
 
-# ---------------- EVENTO ----------------
+    # ---------------- COMANDOS PREFIXO ----------------
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def autothread(self, ctx):
+
+        config_id = str(uuid.uuid4())
+
+        await set_cfg(self.bot, config_id, {
+            "guild_id": str(ctx.guild.id),
+            "config_id": config_id,
+            "ativo": False,
+            "owner_id": ctx.author.id
+        })
+
+        cfg = await get_cfg(self.bot, config_id)
+
+        msg = await ctx.send(embed=await self.build_embed(ctx.guild, cfg))
+        await msg.edit(view=self.View(self, config_id, ctx.author.id))
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def autothread_list(self, ctx):
+
+        data = await get_all_cfg(self.bot, ctx.guild.id)
+        ativos = [cfg for cfg in data if cfg.get("ativo")][:25]
+
+        if not ativos:
+            return await ctx.send("❌ Nenhuma config ativa.")
+
+        options = [
+            discord.SelectOption(
+                label=f"{i+1}",
+                description=cfg.get("nome", "Thread"),
+                value=cfg["config_id"]
+            )
+            for i, cfg in enumerate(ativos)
+        ]
+
+        view = discord.ui.View()
+        select = discord.ui.Select(placeholder="Selecione", options=options)
+
+        async def callback(interaction):
+            cfg = await get_cfg(self.bot, select.values[0])
+
+            embed = await self.build_embed(ctx.guild, cfg)
+
+            action_view = discord.ui.View()
+
+            async def editar(i):
+                await i.response.send_message(
+                    embed=embed,
+                    view=self.View(self, cfg["config_id"], cfg["owner_id"]),
+                    ephemeral=True
+                )
+
+            async def excluir(i):
+                await delete_cfg(self.bot, cfg["config_id"])
+                await i.response.send_message("🗑️ Excluído.", ephemeral=True)
+
+            b1 = discord.ui.Button(label="Editar", style=discord.ButtonStyle.blurple)
+            b2 = discord.ui.Button(label="Excluir", style=discord.ButtonStyle.red)
+
+            b1.callback = editar
+            b2.callback = excluir
+
+            action_view.add_item(b1)
+            action_view.add_item(b2)
+
+            await interaction.response.send_message(embed=embed, view=action_view, ephemeral=True)
+
+        select.callback = callback
+        view.add_item(select)
+
+        await ctx.send("Selecione:", view=view)
+
+    # ---------------- EVENTO ----------------
 
     @commands.Cog.listener()
     async def on_message(self, m):
@@ -279,8 +356,7 @@ class EasyThreads(commands.Cog):
                 nome = cfg.get("nome", "Thread de {user}").replace("{user}", m.author.name)
                 thread = await m.create_thread(name=nome)
 
-                conteudo = cfg.get("mensagem")
-                conteudo = conteudo.replace("\u200b", "").replace("\uFEFF", "")
+                conteudo = cfg.get("mensagem").replace("\u200b", "").replace("\uFEFF", "")
 
                 msg = await thread.send(conteudo)
 
@@ -288,7 +364,7 @@ class EasyThreads(commands.Cog):
                     await msg.pin()
 
             except Exception as e:
-                print("Erro:", e)
+                print(e)
 
 async def setup(bot):
     await bot.add_cog(EasyThreads(bot))
