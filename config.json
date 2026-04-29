@@ -10,14 +10,15 @@
     "https://cdn.discordapp.com/attachments/1486826586182389991/1493408364984799406/c6be2c02f2a1b18110f8752d96f4428c.jpg?ex=69dedc6c&is=69dd8aec&hm=960333bea1adcd09b1922b9b8884963bc4f24c9dcd521899b50afa1d7c484848&"
   ],
   "fonte": "fonte.ttf"
-  CANAIS_PERMITIDOS = [
+  {
+  "canais_permitidos": [
     1486826621167210621
-]
-
-LINKS_PERMITIDOS = [
+  ],
+  "links_permitidos": [
     "mega.nz",
     "drive.google.com",
     "streamable.com",
     "alightmotion.com"
   ]
+}
 }
