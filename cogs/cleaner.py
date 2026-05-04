@@ -5,6 +5,8 @@ import os
 
 CONFIG_FILE = "config.json"
 
+# ---------------- JSON (NÃO REMOVIDO) ----------------
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "w") as f:
@@ -17,6 +19,19 @@ def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# ---------------- DB (NOVO) ----------------
+
+async def get_cleaner(bot, guild_id):
+    return bot.db["cleaner"].find_one({"guild_id": str(guild_id)})
+
+async def set_cleaner_db(bot, guild_id, data):
+    bot.db["cleaner"].update_one(
+        {"guild_id": str(guild_id)},
+        {"$set": data},
+        upsert=True
+    )
+
+# ---------------- COG ----------------
 
 class Cleaner(commands.Cog):
     def __init__(self, bot):
@@ -25,31 +40,34 @@ class Cleaner(commands.Cog):
         data = load_config()
         self.canais_permitidos = data.get("canais_permitidos", [])
 
-        # 🔗 LINKS AUTORIZADOS (ATUALIZADO)
+        # 🔗 LINKS AUTORIZADOS
         self.links_autorizados = [
             "mega.nz",
             "drive.google.com",
             "tiktok.com",
             "streamable.com",
             "cdn.nsb.gg",
-
-            # 🔥 ADICIONADOS (PROJETOS)
             "mediafire.com",
             "alight.link",
             "dropbox.com",
-            "we.tl",              # WeTransfer
-            "aftereffects",       # fallback genérico
+            "we.tl",
+            "aftereffects",
             "adobe.com"
         ]
+
+    # 🔥 CARREGAR DO DB AO INICIAR
+    async def cog_load(self):
+        for guild in self.bot.guilds:
+            cfg = await get_cleaner(self.bot, guild.id)
+            if cfg:
+                self.canais_permitidos = cfg.get("canais_permitidos", [])
 
     def link_permitido(self, conteudo: str) -> bool:
         conteudo = conteudo.lower()
 
-        # ❌ BLOQUEIA CONVITES DISCORD
         if "discord.gg" in conteudo or "discord.com/invite" in conteudo:
             return False
 
-        # 🔍 VERIFICA LINKS
         if "http://" in conteudo or "https://" in conteudo:
             return any(link in conteudo for link in self.links_autorizados)
 
@@ -75,7 +93,8 @@ class Cleaner(commands.Cog):
                 except discord.HTTPException as e:
                     print(f"⚠️ Erro ao deletar: {e}")
 
-    # 🔧 COMANDO PARA SETAR CANAL (COM PREFIXO ".")
+    # ---------------- COMANDOS ----------------
+
     @commands.command(name="setcleaner")
     @commands.has_permissions(administrator=True)
     async def set_cleaner(self, ctx, canal: discord.TextChannel):
@@ -87,9 +106,13 @@ class Cleaner(commands.Cog):
 
         self.canais_permitidos = data["canais_permitidos"]
 
+        # 🔥 SALVA NO DB
+        await set_cleaner_db(self.bot, ctx.guild.id, {
+            "canais_permitidos": self.canais_permitidos
+        })
+
         await ctx.reply(f"✅ Canal {canal.mention} configurado para o Cleaner.")
 
-    # 🔧 REMOVER CANAL
     @commands.command(name="removecleaner")
     @commands.has_permissions(administrator=True)
     async def remove_cleaner(self, ctx, canal: discord.TextChannel):
@@ -100,6 +123,11 @@ class Cleaner(commands.Cog):
             save_config(data)
 
         self.canais_permitidos = data["canais_permitidos"]
+
+        # 🔥 ATUALIZA DB
+        await set_cleaner_db(self.bot, ctx.guild.id, {
+            "canais_permitidos": self.canais_permitidos
+        })
 
         await ctx.reply(f"❌ Canal {canal.mention} removido do Cleaner.")
 
