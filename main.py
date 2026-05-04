@@ -45,6 +45,21 @@ except Exception as e:
     votacoes_db = None
 
 # ===============================
+# 🔥 NOVO: DETECTAR AUTOTHREAD
+# ===============================
+
+async def tem_autothread_ativo(bot, guild_id, channel_id):
+    try:
+        data = list(bot.db["autothreads"].find({
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id),
+            "ativo": True
+        }))
+        return len(data) > 0
+    except:
+        return False
+
+# ===============================
 # CONFIG
 # ===============================
 
@@ -244,6 +259,12 @@ async def on_message(message):
 
     # 🔥 SISTEMA ORIGINAL DE THREADS
     if message.channel.id == CANAL_PERMITIDO_ID:
+
+        # 🔥 CORREÇÃO (NÃO REMOVE NADA)
+        if await tem_autothread_ativo(bot, message.guild.id, message.channel.id):
+            await bot.process_commands(message)
+            return
+
         permitido = apenas_anexo(message) or link_permitido(message.content)
 
         if not permitido:
