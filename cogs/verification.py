@@ -13,7 +13,6 @@ EMOJI_VERIFY = "<:verify:1526360202197209128>"
 
 class VerificationView(discord.ui.View):
     def __init__(self, bot: commands.Bot):
-        # timeout=None e custom_id em cada botão garantem a persistência pós-reboot
         super().__init__(timeout=None)
         self.bot = bot
 
@@ -44,7 +43,6 @@ class VerificationView(discord.ui.View):
             await interaction.followup.send("❌ | Sistema temporariamente indisponível.", ephemeral=True)
             return
             
-        # Busca a quantidade de convites direto no MongoDB (usando await de forma correta)
         invites_count = await cog.get_user_invites(member.id)
         
         if invites_count >= 3:
@@ -52,7 +50,7 @@ class VerificationView(discord.ui.View):
                 await member.add_roles(role)
                 await interaction.followup.send(f"{EMOJI_VERIFY} | **Verificação concluída!** Você convidou {invites_count} pessoas e recebeu o cargo **{role.name}**.", ephemeral=True)
             except discord.Forbidden:
-                await interaction.followup.send("❌ | Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos do Discord.", ephemeral=True)
+                await interaction.followup.send("❌ | Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos.", ephemeral=True)
         else:
             await interaction.followup.send(f"❌ | Você precisa de 3 convites. No momento, você tem apenas **{invites_count}/3** convites validados.", ephemeral=True)
 
@@ -87,7 +85,6 @@ class VerificationView(discord.ui.View):
 
         user_id = interaction.user.id
         
-        # Verifica se o usuário já tem um convite ativo registrado no cache
         convite_existente = None
         for code, data in cog.invite_cache.items():
             if data["inviter"] == user_id:
@@ -96,7 +93,7 @@ class VerificationView(discord.ui.View):
 
         if convite_existente:
             await interaction.response.send_message(
-                content=f"⚠️ | Você já possui um convite criado! Para evitar abusos, limitamos a **1 convite por usuário**. Use o seu link:\nhttps://discord.gg/{convite_existente}", 
+                content=f"⚠️ | Você já possui um convite criado! Use o seu link:\nhttps://discord.gg/{convite_existente}", 
                 ephemeral=True
             )
             return
@@ -122,7 +119,6 @@ class Verification(commands.Cog):
     # --- Funções do Banco de Dados MongoDB ---
 
     async def get_user_invites(self, user_id):
-        """Busca a quantidade de convites validados de um usuário no MongoDB"""
         try:
             data = await self.bot.db["verification_invites"].find_one({"user_id": str(user_id)})
             if data:
@@ -132,7 +128,6 @@ class Verification(commands.Cog):
         return 0
 
     async def update_user_invites(self, user_id, increment_value):
-        """Aumenta ou diminui os convites de um usuário no MongoDB"""
         try:
             await self.bot.db["verification_invites"].update_one(
                 {"user_id": str(user_id)},
@@ -143,7 +138,6 @@ class Verification(commands.Cog):
             print(f"Erro ao atualizar convites no MongoDB: {e}")
 
     async def get_referred_by(self, member_id):
-        """Busca quem convidou o membro recém-chegado no MongoDB"""
         try:
             data = await self.bot.db["verification_referrals"].find_one({"member_id": str(member_id)})
             if data:
@@ -153,7 +147,6 @@ class Verification(commands.Cog):
         return None
 
     async def set_referred_by(self, member_id, inviter_id):
-        """Registra a relação de quem convidou quem no MongoDB"""
         try:
             await self.bot.db["verification_referrals"].update_one(
                 {"member_id": str(member_id)},
@@ -164,7 +157,6 @@ class Verification(commands.Cog):
             print(f"Erro ao definir indicação no MongoDB: {e}")
 
     async def remove_referred_by(self, member_id):
-        """Remove a indicação do banco MongoDB e retorna o ID de quem o convidou"""
         try:
             data = await self.bot.db["verification_referrals"].find_one_and_delete({"member_id": str(member_id)})
             if data:
@@ -174,12 +166,12 @@ class Verification(commands.Cog):
         return None
 
     async def cog_load(self):
-        # Torna a view persistente registrando-a no bot global e passando o bot
         self.bot.add_view(VerificationView(self.bot))
         self.bot.loop.create_task(self.load_all_invites())
 
     async def load_all_invites(self):
         await self.bot.wait_until_ready()
+        print("🔄 Carregando convites de todos os servidores no cache...")
         for guild in self.bot.guilds:
             try:
                 invites = await guild.invites()
@@ -189,14 +181,14 @@ class Verification(commands.Cog):
                             "uses": invite.uses,
                             "inviter": invite.inviter.id
                         }
+                print(f"✅ Cache populado para o servidor: {guild.name} ({len(invites)} convites)")
             except discord.Forbidden:
-                print(f"Sem permissão para ler convites no servidor: {guild.name}")
+                print(f"❌ Sem permissão (Gerenciar Servidor) para ler convites no servidor: {guild.name}")
 
     # --- Sincronização Automática Interna ---
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Sincroniza os comandos Slash automaticamente assim que o bot iniciar"""
         try:
             await self.bot.tree.sync()
             print("🚀 [Verification] Comando /setup_verificacao sincronizado com sucesso!")
@@ -219,31 +211,41 @@ class Verification(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
+        print(f"👤 Membro entrou: {member.name} ({member.id})")
         try:
+            # Buscamos a lista atual de convites direto do servidor para comparar
             current_invites = await member.guild.invites()
+            
             for invite in current_invites:
                 cached = self.invite_cache.get(invite.code)
+                
+                # Se o convite está no cache e o número de usos subiu:
                 if cached and invite.uses > cached["uses"]:
                     inviter_id = str(cached["inviter"])
                     member_id = str(member.id)
                     
                     if inviter_id == member_id:
-                        break  # Evita autoverificação
-                        
-                    # Registra no MongoDB
+                        print(f"⚠️ {member.name} tentou entrar usando o próprio convite. Ignorando.")
+                        break
+                    
+                    print(f"🎉 Convite correspondido! {member.name} entrou usando o convite de {inviter_id}.")
+                    
+                    # Atualiza o banco de dados
                     await self.set_referred_by(member_id, inviter_id)
                     await self.update_user_invites(inviter_id, 1)
                     
-                    # Atualiza o cache temporário local
+                    # Atualiza o cache local
                     self.invite_cache[invite.code]["uses"] = invite.uses
                     break
+                    
         except discord.Forbidden:
-            pass
+            print(f"❌ Erro ao ler convites na entrada de {member.name}: Falta de permissão 'Gerenciar Servidor'.")
+        except Exception as e:
+            print(f"❌ Erro inesperado no on_member_join: {e}")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         member_id = str(member.id)
-        # Se quem saiu foi convidado por alguém, desconta o ponto no MongoDB
         inviter_id = await self.remove_referred_by(member_id)
         if inviter_id:
             try:
@@ -252,6 +254,7 @@ class Verification(commands.Cog):
                     {"user_id": str(inviter_id)},
                     [{"$set": {"invites_count": {"$max": [0, {"$subtract": ["$invites_count", 1]}]}}}]
                 )
+                print(f"📉 {member.name} saiu do servidor. Removido 1 convite do usuário {inviter_id}.")
             except Exception as e:
                 print(f"Erro ao remover convite no MongoDB: {e}")
 
@@ -260,14 +263,12 @@ class Verification(commands.Cog):
     @app_commands.command(name="setup_verificacao", description="Envia a embed de verificação com os botões.")
     @app_commands.checks.has_permissions(administrator=True)
     async def setup_verificacao(self, interaction: discord.Interaction):
-        # Busca o canal específico configurado pelo ID
         channel = self.bot.get_channel(CHANNEL_ID)
         
         if not channel:
             await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
             return
 
-        # Descrição exata formatada com os IDs de emojis fornecidos
         descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
 > Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
 # <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
@@ -292,4 +293,4 @@ class Verification(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-    
+        
