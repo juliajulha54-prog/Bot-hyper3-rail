@@ -7,7 +7,6 @@ import os
 # IDs fornecidos
 ROLE_ID = 1524804424352927845  # ID do cargo que o usuário ganhará
 CHANNEL_ID = 1525569173420507216  # ID do canal onde a embed será enviada
-DATABASE_FILE = "database.json"
 
 # Emojis personalizados para as mensagens e botões
 EMOJI_CONVITE = "<:convite:1526352250837143552>"
@@ -46,8 +45,8 @@ class VerificationView(discord.ui.View):
             await interaction.followup.send(f" ❌ | Sistema temporariamente indisponível.", ephemeral=True)
             return
             
-        # Puxa os convites do arquivo JSON usando a ID do usuário como texto (padrão do JSON)
-        invites_count = cog.invite_db.get(str(member.id), 0)
+        # Puxa os convites do MongoDB usando a ID do usuário
+        invites_count = await cog.get_user_invites(member.id)
         
         if invites_count >= 3:
             try:
@@ -67,7 +66,7 @@ class VerificationView(discord.ui.View):
     )
     async def my_invites(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog("Verification")
-        invites_count = cog.invite_db.get(str(interaction.user.id), 0) if cog else 0
+        invites_count = await cog.get_user_invites(interaction.user.id) if cog else 0
         await interaction.response.send_message(f"{EMOJI_CONVITE} | Você possui atualmente **{invites_count}** convites validados.", ephemeral=True)
 
     # Botão com o emoji de Link (🔗) integrado
@@ -115,45 +114,46 @@ class VerificationView(discord.ui.View):
 class Verification(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.referred_by = {}
-        self.invite_db = {}
         self.invite_cache = {}
-        self.load_database()
 
-    # --- Funções do Banco de Dados JSON ---
+    # --- Funções do Banco de Dados MongoDB ---
 
-    def load_database(self):
-        """Carrega os dados salvos no JSON"""
-        if os.path.exists(DATABASE_FILE):
-            try:
-                with open(DATABASE_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.invite_db = data.get("invite_db", {})
-                    self.referred_by = data.get("referred_by", {})
-            except Exception as e:
-                print(f"Erro ao carregar o JSON: {e}")
-                self.invite_db = {}
-                self.referred_by = {}
-        else:
-            self.invite_db = {}
-            self.referred_by = {}
-            self.save_database()
+    async def get_user_invites(self, user_id):
+        """Busca a quantidade de convites validados de um usuário no Mongo"""
+        data = await self.bot.db["verification_invites"].find_one({"user_id": str(user_id)})
+        if data:
+            return data.get("invites_count", 0)
+        return 0
 
-    def save_database(self):
-        """Salva as alterações no JSON"""
-        try:
-            with open(DATABASE_FILE, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "invite_db": self.invite_db,
-                        "referred_by": self.referred_by
-                    },
-                    f,
-                    indent=4,
-                    ensure_ascii=False
-                )
-        except Exception as e:
-            print(f"Erro ao salvar no JSON: {e}")
+    async def update_user_invites(self, user_id, increment_value):
+        """Aumenta ou diminui os convites de um usuário no Mongo"""
+        await self.bot.db["verification_invites"].update_one(
+            {"user_id": str(user_id)},
+            {"$inc": {"invites_count": increment_value}},
+            upsert=True
+        )
+
+    async def get_referred_by(self, member_id):
+        """Busca quem convidou o membro recém-chegado"""
+        data = await self.bot.db["verification_referrals"].find_one({"member_id": str(member_id)})
+        if data:
+            return data.get("inviter_id")
+        return None
+
+    async def set_referred_by(self, member_id, inviter_id):
+        """Registra a relação de quem convidou quem no Mongo"""
+        await self.bot.db["verification_referrals"].update_one(
+            {"member_id": str(member_id)},
+            {"$set": {"inviter_id": str(inviter_id)}},
+            upsert=True
+        )
+
+    async def remove_referred_by(self, member_id):
+        """Remove a indicação do banco e retorna o ID de quem o convidou (se existir)"""
+        data = await self.bot.db["verification_referrals"].find_one_and_delete({"member_id": str(member_id)})
+        if data:
+            return data.get("inviter_id")
+        return None
 
     async def cog_load(self):
         # Torna a view persistente registrando-a no bot global
@@ -201,11 +201,9 @@ class Verification(commands.Cog):
                     if inviter_id == member_id:
                         break  # Evita autoverificação
                         
-                    # Registra quem convidou quem no banco de dados
-                    self.referred_by[member_id] = inviter_id
-                    self.invite_db[inviter_id] = self.invite_db.get(inviter_id, 0) + 1
-                    
-                    self.save_database()
+                    # Registra quem convidou quem no banco de dados MongoDB
+                    await self.set_referred_by(member_id, inviter_id)
+                    await self.update_user_invites(inviter_id, 1)
                     
                     # Atualiza o cache temporário local
                     self.invite_cache[invite.code]["uses"] = invite.uses
@@ -217,10 +215,13 @@ class Verification(commands.Cog):
     async def on_member_remove(self, member):
         member_id = str(member.id)
         # Se quem saiu foi convidado por alguém, desconta o ponto
-        inviter_id = self.referred_by.pop(member_id, None)
-        if inviter_id and inviter_id in self.invite_db:
-            self.invite_db[inviter_id] = max(0, self.invite_db[inviter_id] - 1)
-            self.save_database()
+        inviter_id = await self.remove_referred_by(member_id)
+        if inviter_id:
+            # Garante que o valor não fique negativo utilizando find_one_and_update com limite mínimo
+            await self.bot.db["verification_invites"].update_one(
+                {"user_id": str(inviter_id)},
+                [{"$set": {"invites_count": {"$max": [0, {"$subtract": ["$invites_count", 1]}]}}}]
+            )
 
     # --- Comando Slash para enviar o Painel ---
 
@@ -259,4 +260,4 @@ class Verification(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-    
+            
