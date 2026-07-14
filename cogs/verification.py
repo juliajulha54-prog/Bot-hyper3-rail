@@ -105,3 +105,106 @@ class Verification(commands.Cog):
                 self.invites_cache[guild.id] = await guild.invites()
             except discord.Forbidden:
                 pass
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.cache_invites()
+
+    @commands.Cog.listener()
+    async def on_invite_create(self, invite: discord.Invite):
+        try:
+            self.invites_cache[invite.guild.id] = await invite.guild.invites()
+        except discord.Forbidden:
+            pass
+
+    @commands.Cog.listener()
+    async def on_invite_delete(self, invite: discord.Invite):
+        try:
+            self.invites_cache[invite.guild.id] = await invite.guild.invites()
+        except discord.Forbidden:
+            pass
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if member.bot:
+            return
+
+        guild = member.guild
+
+        try:
+            current_invites = await guild.invites()
+        except discord.Forbidden:
+            return
+
+        previous_invites = self.invites_cache.get(guild.id, [])
+
+        used_invite = None
+
+        for invite in current_invites:
+            old = discord.utils.get(previous_invites, code=invite.code)
+
+            if old and invite.uses > old.uses:
+                used_invite = invite
+                break
+
+        self.invites_cache[guild.id] = current_invites
+
+        if used_invite is None:
+            return
+
+        inviter = used_invite.inviter
+
+        if inviter is None:
+            return
+
+        if inviter.bot:
+            return
+
+        if inviter.id == member.id:
+            return
+
+        self.add_invite(inviter.id, member.id)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        if member.bot:
+            return
+
+        self.remove_invite(member.id)
+
+        try:
+            self.invites_cache[member.guild.id] = await member.guild.invites()
+        except discord.Forbidden:
+            pass
+
+    async def give_role(self, member: discord.Member):
+        role = member.guild.get_role(ROLE_ID)
+
+        if role is None:
+            return False
+
+        if role in member.roles:
+            return True
+
+        try:
+            await member.add_roles(role, reason="Verificação por convites")
+            self.set_verified(member.id)
+            return True
+        except discord.Forbidden:
+            return False
+
+    async def create_user_invite(self, guild: discord.Guild):
+        channel = guild.get_channel(INVITE_CHANNEL_ID)
+
+        if channel is None:
+            return None
+
+        try:
+            invite = await channel.create_invite(
+                max_age=0,
+                max_uses=0,
+                unique=True,
+                reason="Sistema de verificação"
+            )
+            return invite
+        except discord.Forbidden:
+            return None
