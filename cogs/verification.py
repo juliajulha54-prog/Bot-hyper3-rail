@@ -192,6 +192,17 @@ class Verification(commands.Cog):
             except discord.Forbidden:
                 print(f"Sem permissão para ler convites no servidor: {guild.name}")
 
+    # --- Sincronização Automática Interna ---
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Sincroniza os comandos Slash automaticamente assim que o bot iniciar"""
+        try:
+            await self.bot.tree.sync()
+            print("🚀 [Verification] Comando /setup_verificacao sincronizado com sucesso!")
+        except Exception as e:
+            print(f"❌ Erro ao sincronizar comandos automaticamente: {e}")
+
     # --- Eventos de Rastreamento de Convites ---
 
     @commands.Cog.listener()
