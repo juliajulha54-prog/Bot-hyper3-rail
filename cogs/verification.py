@@ -192,19 +192,19 @@ class Verification(commands.Cog):
             await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
             return
 
-        # Descrição literal exata sem caracteres de nova linha artificiais
-        descrição_completa = """# :topic1: :convite: Convide 3 pessoas
+        # Descrição com as substituições de menção feitas com os IDs reais fornecidos
+        descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
 > Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
-# :topicopen: :verify: Você ganhará após verificar:
+# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Você ganhará após verificar:
 - :package: Acesso aos presets e project files para AE & AMZ 
 - :clapper: Recursos de edição & Tutoriais:
  CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
 - :tools: Categoria de suporte para editores
 - :fire: Conteúdos & clipes exclusivos
-# :topicopen: :__: Como ver seus convites: 
+# <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites: 
 > - Para ver seus convites, clique no botão "Meus convites"
 > - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
--# :prints: Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
+-# <:prints:1526358671691612200> Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
 
         embed = discord.Embed(
             description=descrição_completa,
@@ -217,4 +217,4 @@ class Verification(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-        
+                
