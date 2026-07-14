@@ -9,12 +9,23 @@ ROLE_ID = 1524804424352927845  # ID do cargo que o usuário ganhará
 CHANNEL_ID = 1525569173420507216  # ID do canal onde a embed será enviada
 DATABASE_FILE = "database.json"
 
+# Emojis personalizados para as mensagens e botões
+EMOJI_CONVITE = "<:convite:1526352250837143552>"
+EMOJI_VERIFY = "<:verify:1526360202197209128>"
+
+
 class VerificationView(discord.ui.View):
     def __init__(self):
         # timeout=None e custom_id em cada botão garantem a persistência pós-reboot
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Validar verificação", style=discord.ButtonStyle.green, custom_id="verify_btn")
+    # Botão com o emoji de Verificação integrado
+    @discord.ui.button(
+        label="Validar verificação", 
+        style=discord.ButtonStyle.green, 
+        custom_id="verify_btn",
+        emoji=discord.PartialEmoji.from_str(EMOJI_VERIFY)
+    )
     async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         
@@ -23,16 +34,16 @@ class VerificationView(discord.ui.View):
         role = guild.get_role(ROLE_ID)
         
         if not role:
-            await interaction.followup.send("❌ O cargo de verificação não foi encontrado. Contate um administrador.", ephemeral=True)
+            await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ O cargo de verificação não foi encontrado. Contate um administrador.", ephemeral=True)
             return
             
         if role in member.roles:
-            await interaction.followup.send("✨ Você já está verificado e possui o cargo!", ephemeral=True)
+            await interaction.followup.send(f"{EMOJI_VERIFY} | ✨ Você já está verificado e possui o cargo!", ephemeral=True)
             return
 
         cog = interaction.client.get_cog("Verification")
         if not cog:
-            await interaction.followup.send("❌ Sistema temporariamente indisponível.", ephemeral=True)
+            await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ Sistema temporariamente indisponível.", ephemeral=True)
             return
             
         # Puxa os convites do arquivo JSON usando a ID do usuário como texto (padrão do JSON)
@@ -41,33 +52,64 @@ class VerificationView(discord.ui.View):
         if invites_count >= 3:
             try:
                 await member.add_roles(role)
-                await interaction.followup.send(f"✅ **Verificação concluída!** Você convidou {invites_count} pessoas e recebeu o cargo **{role.name}**.", ephemeral=True)
+                await interaction.followup.send(f"{EMOJI_VERIFY} | ✅ **Verificação concluída!** Você convidou {invites_count} pessoas e recebeu o cargo **{role.name}**.", ephemeral=True)
             except discord.Forbidden:
-                await interaction.followup.send("❌ Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos do Discord.", ephemeral=True)
+                await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos do Discord.", ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ Você precisa de 3 convites. No momento, você tem apenas **{invites_count}/3** convites validados.", ephemeral=True)
+            await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ Você precisa de 3 convites. No momento, você tem apenas **{invites_count}/3** convites validados.", ephemeral=True)
 
-    @discord.ui.button(label="Meus convites", style=discord.ButtonStyle.blurple, custom_id="my_invites_btn")
+    # Botão com o emoji de Convite integrado
+    @discord.ui.button(
+        label="Meus convites", 
+        style=discord.ButtonStyle.blurple, 
+        custom_id="my_invites_btn",
+        emoji=discord.PartialEmoji.from_str(EMOJI_CONVITE)
+    )
     async def my_invites(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog("Verification")
         invites_count = cog.invite_db.get(str(interaction.user.id), 0) if cog else 0
-        await interaction.response.send_message(f"📊 Você possui atualmente **{invites_count}** convites validados.", ephemeral=True)
+        await interaction.response.send_message(f"{EMOJI_CONVITE} | Você possui atualmente **{invites_count}** convites validados.", ephemeral=True)
 
-    @discord.ui.button(label="Criar convite", style=discord.ButtonStyle.gray, custom_id="create_invite_btn")
+    # Botão com o emoji de Link (🔗) integrado
+    @discord.ui.button(
+        label="Criar convite", 
+        style=discord.ButtonStyle.gray, 
+        custom_id="create_invite_btn",
+        emoji="🔗"
+    )
     async def create_invite(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("Verification")
+        if not cog:
+            await interaction.response.send_message(f"{EMOJI_CONVITE} | ❌ Sistema temporariamente indisponível.", ephemeral=True)
+            return
+
+        user_id = interaction.user.id
+        
+        # Verifica se o usuário já tem um convite ativo registrado no cache
+        convite_existente = None
+        for code, data in cog.invite_cache.items():
+            if data["inviter"] == user_id:
+                convite_existente = code
+                break
+
+        if convite_existente:
+            await interaction.response.send_message(
+                content=f"{EMOJI_CONVITE} | ⚠️ Você já possui um convite criado! Para evitar abusos, limitamos a **1 convite por usuário**. Use o seu link existente:\nhttps://discord.gg/{convite_existente}", 
+                ephemeral=True
+            )
+            return
+
         try:
             invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=True, reason=f"Criado por {interaction.user}")
             
-            cog = interaction.client.get_cog("Verification")
-            if cog:
-                cog.invite_cache[invite.code] = {
-                    "uses": invite.uses,
-                    "inviter": interaction.user.id
-                }
+            cog.invite_cache[invite.code] = {
+                "uses": invite.uses,
+                "inviter": user_id
+            }
                 
-            await interaction.response.send_message(f"🔗 Aqui está o seu convite exclusivo:\n{invite.url}", ephemeral=True)
+            await interaction.response.send_message(f"{EMOJI_CONVITE} | 🔗 Aqui está o seu convite exclusivo:\n{invite.url}", ephemeral=True)
         except Exception:
-            await interaction.response.send_message("❌ Não consegui criar um convite neste canal. Certifique-se de que eu tenho permissão para 'Criar Convites'.", ephemeral=True)
+            await interaction.response.send_message(f"{EMOJI_CONVITE} | ❌ Não consegui criar um convite neste canal. Certifique-se de que eu tenho permissão para 'Criar Convites'.", ephemeral=True)
 
 
 class Verification(commands.Cog):
@@ -192,15 +234,15 @@ class Verification(commands.Cog):
             await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
             return
 
-        # Descrição com as substituições de menção feitas com os IDs reais fornecidos
+        # Nova descrição exata formatada com os IDs de emojis fornecidos
         descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
 > Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
-# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Você ganhará após verificar:
-- :package: Acesso aos presets e project files para AE & AMZ 
-- :clapper: Recursos de edição & Tutoriais:
+# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
+> - :package: Acesso aos presets e project files para AE & AMZ 
+> - :clapper: Recursos de edição & Tutoriais:
  CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
-- :tools: Categoria de suporte para editores
-- :fire: Conteúdos & clipes exclusivos
+> - :tools: Categoria de suporte para editores
+> - :fire: Conteúdos & clipes exclusivos
 # <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites: 
 > - Para ver seus convites, clique no botão "Meus convites"
 > - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
@@ -217,4 +259,4 @@ class Verification(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-                
+    
