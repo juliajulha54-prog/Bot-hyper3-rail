@@ -94,7 +94,7 @@ class VerificationView(discord.ui.View):
 
         if convite_existente:
             await interaction.response.send_message(
-                content=f"{EMOJI_CONVITE} | ⚠️ Você já possui um convite criado! Para evitar abusos, limitamos a **1 convite por usuário**. Use o seu link existente:\nhttps://discord.gg/{convite_existente}", 
+                content=f"⚠️ | Você já possui um convite criado! Para evitar abusos, limitamos a **1 convite por usuário**. Use o seu link:\nhttps://discord.gg/{convite_existente}", 
                 ephemeral=True
             )
             return
@@ -107,9 +107,9 @@ class VerificationView(discord.ui.View):
                 "inviter": user_id
             }
                 
-            await interaction.response.send_message(f"{EMOJI_CONVITE} | 🔗 Aqui está o seu convite exclusivo:\n{invite.url}", ephemeral=True)
+            await interaction.response.send_message(f"🔗 | Aqui está o seu convite exclusivo:\n{invite.url}", ephemeral=True)
         except Exception:
-            await interaction.response.send_message(f"{EMOJI_CONVITE} | ❌ Não consegui criar um convite neste canal. Certifique-se de que eu tenho permissão para 'Criar Convites'.", ephemeral=True)
+            await interaction.response.send_message(f"❌ | Não consegui criar um convite neste canal. Certifique-se de que eu tenho permissão para 'Criar Convites'.", ephemeral=True)
 
 
 class Verification(commands.Cog):
