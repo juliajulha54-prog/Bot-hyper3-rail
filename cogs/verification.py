@@ -3,8 +3,8 @@ from discord.ext import commands
 from discord import app_commands
 
 # IDs fornecidos
-ROLE_ID = 1524804424352927845  # ID do cargo que o usuário ganhará
-CHANNEL_ID = 1525569173420507216  # ID do canal onde a embed será enviada
+ROLE_ID = 1524804424352927845   # ID do cargo que o usuário ganhará
+CHANNEL_ID = 1526281178934542337  # ID do canal onde a embed será enviada
 
 # Emojis personalizados para as mensagens e botões
 EMOJI_CONVITE = "<:convite:1526352250837143552>"
