@@ -43,6 +43,7 @@ class VerificationView(discord.ui.View):
             await interaction.followup.send("❌ | Sistema temporariamente indisponível.", ephemeral=True)
             return
             
+        # get_user_invites é uma função assíncrona do Cog que lida internamente com o banco
         invites_count = await cog.get_user_invites(member.id)
         
         if invites_count >= 3:
@@ -116,13 +117,13 @@ class Verification(commands.Cog):
         self.bot = bot
         self.invite_cache = {}
 
-    # --- Funções do Banco de Dados MongoDB Corrigidas ---
+    # --- Funções do Banco de Dados MongoDB Síncronas (Sem await interno) ---
 
     async def get_user_invites(self, user_id):
-        """Busca a quantidade de convites validados de um usuário no MongoDB com tratamento correto de await em coleções"""
+        """Busca a quantidade de convites validados usando PyMongo de forma síncrona"""
         try:
-            collection = self.bot.db["verification_invites"]
-            data = await collection.find_one({"user_id": str(user_id)})
+            # Removemos o await desta linha para evitar o erro 'object dict can't be used in await'
+            data = self.bot.db["verification_invites"].find_one({"user_id": str(user_id)})
             if data:
                 return data.get("invites_count", 0)
         except Exception as e:
@@ -130,10 +131,10 @@ class Verification(commands.Cog):
         return 0
 
     async def update_user_invites(self, user_id, increment_value):
-        """Aumenta ou diminui os convites de um usuário no MongoDB"""
+        """Atualiza os convites de forma síncrona"""
         try:
-            collection = self.bot.db["verification_invites"]
-            await collection.update_one(
+            # Removemos o await desta linha
+            self.bot.db["verification_invites"].update_one(
                 {"user_id": str(user_id)},
                 {"$inc": {"invites_count": increment_value}},
                 upsert=True
@@ -143,10 +144,10 @@ class Verification(commands.Cog):
             print(f"❌ Erro ao atualizar convites no MongoDB: {e}")
 
     async def get_referred_by(self, member_id):
-        """Busca quem convidou o membro recém-chegado no MongoDB"""
+        """Busca a indicação de forma síncrona"""
         try:
-            collection = self.bot.db["verification_referrals"]
-            data = await collection.find_one({"member_id": str(member_id)})
+            # Removemos o await desta linha
+            data = self.bot.db["verification_referrals"].find_one({"member_id": str(member_id)})
             if data:
                 return data.get("inviter_id")
         except Exception as e:
@@ -154,10 +155,10 @@ class Verification(commands.Cog):
         return None
 
     async def set_referred_by(self, member_id, inviter_id):
-        """Registra a relação de quem convidou quem no MongoDB"""
+        """Registra a indicação de forma síncrona"""
         try:
-            collection = self.bot.db["verification_referrals"]
-            await collection.update_one(
+            # Removemos o await desta linha
+            self.bot.db["verification_referrals"].update_one(
                 {"member_id": str(member_id)},
                 {"$set": {"inviter_id": str(inviter_id)}},
                 upsert=True
@@ -167,10 +168,10 @@ class Verification(commands.Cog):
             print(f"❌ Erro ao definir indicação no MongoDB: {e}")
 
     async def remove_referred_by(self, member_id):
-        """Remove a indicação do banco MongoDB e retorna o ID de quem o convidou"""
+        """Remove indicação de forma síncrona"""
         try:
-            collection = self.bot.db["verification_referrals"]
-            data = await collection.find_one_and_delete({"member_id": str(member_id)})
+            # Removemos o await desta linha
+            data = self.bot.db["verification_referrals"].find_one_and_delete({"member_id": str(member_id)})
             if data:
                 return data.get("inviter_id")
         except Exception as e:
@@ -240,7 +241,7 @@ class Verification(commands.Cog):
                     
                     print(f"🎉 Convite correspondido! {member.name} entrou usando o convite de {inviter_id}.")
                     
-                    # Atualiza o banco de dados
+                    # Atualiza o banco de dados (chamadas agora sem await interno nas funções)
                     await self.set_referred_by(member_id, inviter_id)
                     await self.update_user_invites(inviter_id, 1)
                     
@@ -259,9 +260,8 @@ class Verification(commands.Cog):
         inviter_id = await self.remove_referred_by(member_id)
         if inviter_id:
             try:
-                collection = self.bot.db["verification_invites"]
-                # Garante que o valor não fique menor que zero na redução
-                await collection.update_one(
+                # Removemos o await daqui para ser síncrono
+                self.bot.db["verification_invites"].update_one(
                     {"user_id": str(inviter_id)},
                     [{"$set": {"invites_count": {"$max": [0, {"$subtract": ["$invites_count", 1]}]}}}]
                 )
@@ -311,14 +311,14 @@ class Verification(commands.Cog):
         
         try:
             if usuario:
-                # Reseta apenas o usuário informado
-                await self.bot.db["verification_invites"].delete_one({"user_id": str(usuario.id)})
-                await self.bot.db["verification_referrals"].delete_many({"inviter_id": str(usuario.id)})
+                # Removemos o await desta linha
+                self.bot.db["verification_invites"].delete_one({"user_id": str(usuario.id)})
+                self.bot.db["verification_referrals"].delete_many({"inviter_id": str(usuario.id)})
                 await interaction.followup.send(f"🧹 | Os convites de {usuario.mention} foram completamente resetados no MongoDB!", ephemeral=True)
             else:
-                # Reseta TODAS as coleções do sistema de convites do banco
-                await self.bot.db["verification_invites"].drop()
-                await self.bot.db["verification_referrals"].drop()
+                # Removemos o await desta linha
+                self.bot.db["verification_invites"].drop()
+                self.bot.db["verification_referrals"].drop()
                 await interaction.followup.send("🧹 | **Todas as contagens de convites** de todos os usuários foram completamente resetadas do MongoDB!", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ | Ocorreu um erro ao tentar resetar os dados no MongoDB: `{e}`", ephemeral=True)
@@ -326,4 +326,4 @@ class Verification(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-            
+                
