@@ -1,8 +1,6 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
-import os
 
 # IDs fornecidos
 ROLE_ID = 1524804424352927845  # ID do cargo que o usuário ganhará
@@ -45,7 +43,7 @@ class VerificationView(discord.ui.View):
             await interaction.followup.send(f" ❌ | Sistema temporariamente indisponível.", ephemeral=True)
             return
             
-        # Puxa os convites do MongoDB usando a ID do usuário
+        # CORREÇÃO: Adicionado 'await' para esperar a resposta assíncrona do MongoDB
         invites_count = await cog.get_user_invites(member.id)
         
         if invites_count >= 3:
@@ -66,7 +64,11 @@ class VerificationView(discord.ui.View):
     )
     async def my_invites(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog("Verification")
+        
+        # CORREÇÃO: Adicionado 'await' para puxar do Mongo de forma correta
         invites_count = await cog.get_user_invites(interaction.user.id) if cog else 0
+        
+        # CORREÇÃO: Adicionado 'await' no envio da mensagem de resposta
         await interaction.response.send_message(f"{EMOJI_CONVITE} | Você possui atualmente **{invites_count}** convites validados.", ephemeral=True)
 
     # Botão com o emoji de Link (🔗) integrado
@@ -233,6 +235,34 @@ class Verification(commands.Cog):
         
         if not channel:
             await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
+            return
+
+        # Nova descrição exata formatada com os IDs de emojis fornecidos
+        descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
+> Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
+# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
+> - :package: Acesso aos presets e project files para AE & AMZ 
+> - :clapper: Recursos de edição & Tutoriais:
+ CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
+> - :tools: Categoria de suporte para editores
+> - :fire: Conteúdos & clipes exclusivos
+# <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites: 
+> - Para ver seus convites, clique no botão "Meus convites"
+> - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
+-# <:prints:1526358671691612200> Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
+
+        embed = discord.Embed(
+            description=descrição_completa,
+            color=discord.Color.blue()
+        )
+        
+        await channel.send(embed=embed, view=VerificationView())
+        await interaction.response.send_message(f"✅ Embed de verificação configurada e enviada no canal <#{CHANNEL_ID}>!", ephemeral=True)
+
+
+async def setup(bot):
+    await bot.add_cog(Verification(bot))
+                e(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
             return
 
         # Nova descrição exata formatada com os IDs de emojis fornecidos
