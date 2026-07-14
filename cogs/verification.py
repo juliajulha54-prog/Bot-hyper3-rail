@@ -1,210 +1,220 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import json
 import os
 
-INVITES_FILE = "invites.json"
+# IDs fornecidos
+ROLE_ID = 1524804424352927845  # ID do cargo que o usuário ganhará
+CHANNEL_ID = 1525569173420507216  # ID do canal onde a embed será enviada
+DATABASE_FILE = "database.json"
 
-ROLE_ID = 1524804424352927845
-INVITE_CHANNEL_ID = 1526281178934542337
-REQUIRED_INVITES = 3
+class VerificationView(discord.ui.View):
+    def __init__(self):
+        # timeout=None e custom_id em cada botão garantem a persistência pós-reboot
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Validar verificação", style=discord.ButtonStyle.green, custom_id="verify_btn")
+    async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        guild = interaction.guild
+        member = interaction.user
+        role = guild.get_role(ROLE_ID)
+        
+        if not role:
+            await interaction.followup.send("❌ O cargo de verificação não foi encontrado. Contate um administrador.", ephemeral=True)
+            return
+            
+        if role in member.roles:
+            await interaction.followup.send("✨ Você já está verificado e possui o cargo!", ephemeral=True)
+            return
+
+        cog = interaction.client.get_cog("Verification")
+        if not cog:
+            await interaction.followup.send("❌ Sistema temporariamente indisponível.", ephemeral=True)
+            return
+            
+        # Puxa os convites do arquivo JSON usando a ID do usuário como texto (padrão do JSON)
+        invites_count = cog.invite_db.get(str(member.id), 0)
+        
+        if invites_count >= 3:
+            try:
+                await member.add_roles(role)
+                await interaction.followup.send(f"✅ **Verificação concluída!** Você convidou {invites_count} pessoas e recebeu o cargo **{role.name}**.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.followup.send("❌ Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos do Discord.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Você precisa de 3 convites. No momento, você tem apenas **{invites_count}/3** convites validados.", ephemeral=True)
+
+    @discord.ui.button(label="Meus convites", style=discord.ButtonStyle.blurple, custom_id="my_invites_btn")
+    async def my_invites(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog("Verification")
+        invites_count = cog.invite_db.get(str(interaction.user.id), 0) if cog else 0
+        await interaction.response.send_message(f"📊 Você possui atualmente **{invites_count}** convites validados.", ephemeral=True)
+
+    @discord.ui.button(label="Criar convite", style=discord.ButtonStyle.gray, custom_id="create_invite_btn")
+    async def create_invite(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=True, reason=f"Criado por {interaction.user}")
+            
+            cog = interaction.client.get_cog("Verification")
+            if cog:
+                cog.invite_cache[invite.code] = {
+                    "uses": invite.uses,
+                    "inviter": interaction.user.id
+                }
+                
+            await interaction.response.send_message(f"🔗 Aqui está o seu convite exclusivo:\n{invite.url}", ephemeral=True)
+        except Exception:
+            await interaction.response.send_message("❌ Não consegui criar um convite neste canal. Certifique-se de que eu tenho permissão para 'Criar Convites'.", ephemeral=True)
 
 
 class Verification(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
-        self.invites_cache: dict[int, list[discord.Invite]] = {}
-        self.data = self.load_data()
+        self.referred_by = {}
+        self.invite_db = {}
+        self.invite_cache = {}
+        self.load_database()
 
-    def load_data(self):
-        if not os.path.exists(INVITES_FILE):
-            with open(INVITES_FILE, "w", encoding="utf-8") as f:
+    # --- Funções do Banco de Dados JSON ---
+
+    def load_database(self):
+        """Carrega os dados salvos no JSON"""
+        if os.path.exists(DATABASE_FILE):
+            try:
+                with open(DATABASE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.invite_db = data.get("invite_db", {})
+                    self.referred_by = data.get("referred_by", {})
+            except Exception as e:
+                print(f"Erro ao carregar o JSON: {e}")
+                self.invite_db = {}
+                self.referred_by = {}
+        else:
+            self.invite_db = {}
+            self.referred_by = {}
+            self.save_database()
+
+    def save_database(self):
+        """Salva as alterações no JSON"""
+        try:
+            with open(DATABASE_FILE, "w", encoding="utf-8") as f:
                 json.dump(
                     {
-                        "users": {},
-                        "members": {}
+                        "invite_db": self.invite_db,
+                        "referred_by": self.referred_by
                     },
                     f,
-                    indent=4
+                    indent=4,
+                    ensure_ascii=False
                 )
+        except Exception as e:
+            print(f"Erro ao salvar no JSON: {e}")
 
-        with open(INVITES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    async def cog_load(self):
+        # Torna a view persistente registrando-a no bot global
+        self.bot.add_view(VerificationView())
+        self.bot.loop.create_task(self.load_all_invites())
 
-        if "users" not in data:
-            data["users"] = {}
-
-        if "members" not in data:
-            data["members"] = {}
-
-        return data
-
-    def save_data(self):
-        with open(INVITES_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=4)
-
-    def ensure_user(self, user_id: int):
-        uid = str(user_id)
-
-        if uid not in self.data["users"]:
-            self.data["users"][uid] = {
-                "invited": [],
-                "verified": False
-            }
-
-    def get_user(self, user_id: int):
-        self.ensure_user(user_id)
-        return self.data["users"][str(user_id)]
-
-    def get_invites(self, user_id: int):
-        return len(self.get_user(user_id)["invited"])
-
-    def is_verified(self, user_id: int):
-        return self.get_user(user_id)["verified"]
-
-    def set_verified(self, user_id: int):
-        self.ensure_user(user_id)
-        self.data["users"][str(user_id)]["verified"] = True
-        self.save_data()
-
-    def add_invite(self, inviter_id: int, member_id: int):
-        self.ensure_user(inviter_id)
-
-        invited = self.data["users"][str(inviter_id)]["invited"]
-
-        if member_id not in invited:
-            invited.append(member_id)
-
-        self.data["members"][str(member_id)] = inviter_id
-
-        self.save_data()
-
-    def remove_invite(self, member_id: int):
-        mid = str(member_id)
-
-        if mid not in self.data["members"]:
-            return
-
-        inviter_id = str(self.data["members"][mid])
-
-        if inviter_id in self.data["users"]:
-            invited = self.data["users"][inviter_id]["invited"]
-
-            if member_id in invited:
-                invited.remove(member_id)
-
-        del self.data["members"][mid]
-
-        self.save_data()
-
-    async def cache_invites(self):
-        self.invites_cache.clear()
-
+    async def load_all_invites(self):
+        await self.bot.wait_until_ready()
         for guild in self.bot.guilds:
             try:
-                self.invites_cache[guild.id] = await guild.invites()
+                invites = await guild.invites()
+                for invite in invites:
+                    if invite.inviter:
+                        self.invite_cache[invite.code] = {
+                            "uses": invite.uses,
+                            "inviter": invite.inviter.id
+                        }
             except discord.Forbidden:
-                pass
-    @commands.Cog.listener()
-    async def on_ready(self):
-        await self.cache_invites()
+                print(f"Sem permissão para ler convites no servidor: {guild.name}")
+
+    # --- Eventos de Rastreamento de Convites ---
 
     @commands.Cog.listener()
-    async def on_invite_create(self, invite: discord.Invite):
+    async def on_invite_create(self, invite):
+        if invite.inviter:
+            self.invite_cache[invite.code] = {
+                "uses": invite.uses,
+                "inviter": invite.inviter.id
+            }
+
+    @commands.Cog.listener()
+    async def on_invite_delete(self, invite):
+        self.invite_cache.pop(invite.code, None)
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
         try:
-            self.invites_cache[invite.guild.id] = await invite.guild.invites()
+            current_invites = await member.guild.invites()
+            for invite in current_invites:
+                cached = self.invite_cache.get(invite.code)
+                if cached and invite.uses > cached["uses"]:
+                    inviter_id = str(cached["inviter"])
+                    member_id = str(member.id)
+                    
+                    if inviter_id == member_id:
+                        break  # Evita autoverificação
+                        
+                    # Registra quem convidou quem no banco de dados
+                    self.referred_by[member_id] = inviter_id
+                    self.invite_db[inviter_id] = self.invite_db.get(inviter_id, 0) + 1
+                    
+                    self.save_database()
+                    
+                    # Atualiza o cache temporário local
+                    self.invite_cache[invite.code]["uses"] = invite.uses
+                    break
         except discord.Forbidden:
             pass
 
     @commands.Cog.listener()
-    async def on_invite_delete(self, invite: discord.Invite):
-        try:
-            self.invites_cache[invite.guild.id] = await invite.guild.invites()
-        except discord.Forbidden:
-            pass
+    async def on_member_remove(self, member):
+        member_id = str(member.id)
+        # Se quem saiu foi convidado por alguém, desconta o ponto
+        inviter_id = self.referred_by.pop(member_id, None)
+        if inviter_id and inviter_id in self.invite_db:
+            self.invite_db[inviter_id] = max(0, self.invite_db[inviter_id] - 1)
+            self.save_database()
 
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        if member.bot:
+    # --- Comando Slash para enviar o Painel ---
+
+    @app_commands.command(name="setup_verificacao", description="Envia a embed de verificação com os botões.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setup_verificacao(self, interaction: discord.Interaction):
+        # Busca o canal específico configurado pelo ID
+        channel = self.bot.get_channel(CHANNEL_ID)
+        
+        if not channel:
+            await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
             return
 
-        guild = member.guild
+        # Descrição literal exata sem caracteres de nova linha artificiais
+        descrição_completa = """# :topic1: :convite: Convide 3 pessoas
+> Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
+# :topicopen: :verify: Você ganhará após verificar:
+- :package: Acesso aos presets e project files para AE & AMZ 
+- :clapper: Recursos de edição & Tutoriais:
+ CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
+- :tools: Categoria de suporte para editores
+- :fire: Conteúdos & clipes exclusivos
+# :topicopen: :__: Como ver seus convites: 
+> - Para ver seus convites, clique no botão "Meus convites"
+> - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
+-# :prints: Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
 
-        try:
-            current_invites = await guild.invites()
-        except discord.Forbidden:
-            return
+        embed = discord.Embed(
+            description=descrição_completa,
+            color=discord.Color.blue()
+        )
+        
+        await channel.send(embed=embed, view=VerificationView())
+        await interaction.response.send_message(f"✅ Embed de verificação configurada e enviada no canal <#{CHANNEL_ID}>!", ephemeral=True)
 
-        previous_invites = self.invites_cache.get(guild.id, [])
 
-        used_invite = None
-
-        for invite in current_invites:
-            old = discord.utils.get(previous_invites, code=invite.code)
-
-            if old and invite.uses > old.uses:
-                used_invite = invite
-                break
-
-        self.invites_cache[guild.id] = current_invites
-
-        if used_invite is None:
-            return
-
-        inviter = used_invite.inviter
-
-        if inviter is None:
-            return
-
-        if inviter.bot:
-            return
-
-        if inviter.id == member.id:
-            return
-
-        self.add_invite(inviter.id, member.id)
-
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
-        if member.bot:
-            return
-
-        self.remove_invite(member.id)
-
-        try:
-            self.invites_cache[member.guild.id] = await member.guild.invites()
-        except discord.Forbidden:
-            pass
-
-    async def give_role(self, member: discord.Member):
-        role = member.guild.get_role(ROLE_ID)
-
-        if role is None:
-            return False
-
-        if role in member.roles:
-            return True
-
-        try:
-            await member.add_roles(role, reason="Verificação por convites")
-            self.set_verified(member.id)
-            return True
-        except discord.Forbidden:
-            return False
-
-    async def create_user_invite(self, guild: discord.Guild):
-        channel = guild.get_channel(INVITE_CHANNEL_ID)
-
-        if channel is None:
-            return None
-
-        try:
-            invite = await channel.create_invite(
-                max_age=0,
-                max_uses=0,
-                unique=True,
-                reason="Sistema de verificação"
-            )
-            return invite
-        except discord.Forbidden:
-            return None
+async def setup(bot):
+    await bot.add_cog(Verification(bot))
+        
