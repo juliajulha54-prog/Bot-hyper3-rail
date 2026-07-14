@@ -5,8 +5,8 @@ import os
 
 INVITES_FILE = "invites.json"
 
-ROLE_ID = 1524804424352927845  # Cargo que será liberado
-INVITE_CHANNEL_ID = 1526281178934542337  # Canal onde será criado o convite
+ROLE_ID = 1524804424352927845
+INVITE_CHANNEL_ID = 1526281178934542337
 
 
 class Verification(commands.Cog):
@@ -21,7 +21,12 @@ class Verification(commands.Cog):
                 json.dump({}, f, indent=4)
 
         with open(INVITES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            data = {}
+
+        return data
 
     def save_data(self):
         with open(INVITES_FILE, "w", encoding="utf-8") as f:
@@ -36,27 +41,42 @@ class Verification(commands.Cog):
             except discord.Forbidden:
                 pass
 
-    def get_user_invites(self, user_id: int):
-        return self.data.get(str(user_id), 0)
-
-    def add_invite(self, user_id: int):
+    def ensure_user(self, user_id: int):
         uid = str(user_id)
 
         if uid not in self.data:
-            self.data[uid] = 0
+            self.data[uid] = {
+                "invited": []
+            }
 
-        self.data[uid] += 1
-        self.save_data()
+    def add_invited_member(self, inviter_id: int, member_id: int):
+        self.ensure_user(inviter_id)
 
-    def remove_invite(self, user_id: int):
-        uid = str(user_id)
+        invited = self.data[str(inviter_id)]["invited"]
 
-        if uid not in self.data:
-            return
+        if member_id not in invited:
+            invited.append(member_id)
+            self.save_data()
 
-        self.data[uid] -= 1
+    def remove_invited_member(self, inviter_id: int, member_id: int):
+        self.ensure_user(inviter_id)
 
-        if self.data[uid] < 0:
-            self.data[uid] = 0
+        invited = self.data[str(inviter_id)]["invited"]
 
-        self.save_data()
+        if member_id in invited:
+            invited.remove(member_id)
+            self.save_data()
+
+    def get_invites(self, user_id: int):
+        self.ensure_user(user_id)
+        return len(self.data[str(user_id)]["invited"])
+
+    def get_invited_members(self, user_id: int):
+        self.ensure_user(user_id)
+        return self.data[str(user_id)]["invited"]
+
+    def find_inviter(self, member_id: int):
+        for inviter_id, info in self.data.items():
+            if member_id in info.get("invited", []):
+                return int(inviter_id)
+        return None
