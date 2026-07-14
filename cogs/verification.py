@@ -80,3 +80,71 @@ class Verification(commands.Cog):
             if member_id in info.get("invited", []):
                 return int(inviter_id)
         return None
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.cache_invites()
+
+    @commands.Cog.listener()
+    async def on_invite_create(self, invite: discord.Invite):
+        try:
+            self.invites[invite.guild.id] = await invite.guild.invites()
+        except discord.Forbidden:
+            pass
+
+    @commands.Cog.listener()
+    async def on_invite_delete(self, invite: discord.Invite):
+        try:
+            self.invites[invite.guild.id] = await invite.guild.invites()
+        except discord.Forbidden:
+            pass
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if member.bot:
+            return
+
+        guild = member.guild
+
+        try:
+            current_invites = await guild.invites()
+        except discord.Forbidden:
+            return
+
+        previous_invites = self.invites.get(guild.id, [])
+
+        used_invite = None
+
+        for current in current_invites:
+            old = discord.utils.get(previous_invites, code=current.code)
+
+            if old and current.uses > old.uses:
+                used_invite = current
+                break
+
+        self.invites[guild.id] = current_invites
+
+        if used_invite is None:
+            return
+
+        inviter = used_invite.inviter
+
+        if inviter is None or inviter.bot:
+            return
+
+        if inviter.id == member.id:
+            return
+
+        self.add_invited_member(inviter.id, member.id)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        inviter_id = self.find_inviter(member.id)
+
+        if inviter_id:
+            self.remove_invited_member(inviter_id, member.id)
+
+        try:
+            self.invites[member.guild.id] = await member.guild.invites()
+        except discord.Forbidden:
+            pass
