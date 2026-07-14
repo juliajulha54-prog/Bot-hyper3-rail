@@ -34,16 +34,16 @@ class VerificationView(discord.ui.View):
         role = guild.get_role(ROLE_ID)
         
         if not role:
-            await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ O cargo de verificação não foi encontrado. Contate um administrador.", ephemeral=True)
+            await interaction.followup.send(f" ❌ | O cargo de verificação não foi encontrado. Contate um administrador.", ephemeral=True)
             return
             
         if role in member.roles:
-            await interaction.followup.send(f"{EMOJI_VERIFY} | ✨ Você já está verificado e possui o cargo!", ephemeral=True)
+            await interaction.followup.send(f"{EMOJI_VERIFY} | Você já está verificado e possui o cargo!", ephemeral=True)
             return
 
         cog = interaction.client.get_cog("Verification")
         if not cog:
-            await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ Sistema temporariamente indisponível.", ephemeral=True)
+            await interaction.followup.send(f" ❌ | Sistema temporariamente indisponível.", ephemeral=True)
             return
             
         # Puxa os convites do arquivo JSON usando a ID do usuário como texto (padrão do JSON)
@@ -52,11 +52,11 @@ class VerificationView(discord.ui.View):
         if invites_count >= 3:
             try:
                 await member.add_roles(role)
-                await interaction.followup.send(f"{EMOJI_VERIFY} | ✅ **Verificação concluída!** Você convidou {invites_count} pessoas e recebeu o cargo **{role.name}**.", ephemeral=True)
+                await interaction.followup.send(f"{EMOJI_VERIFY} | **Verificação concluída!** Você convidou {invites_count} pessoas e recebeu o cargo **{role.name}**.", ephemeral=True)
             except discord.Forbidden:
-                await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos do Discord.", ephemeral=True)
+                await interaction.followup.send(f"❌ | Eu não tenho permissão para gerenciar cargos. Verifique se meu cargo está acima do cargo de verificação na lista de cargos do Discord.", ephemeral=True)
         else:
-            await interaction.followup.send(f"{EMOJI_VERIFY} | ❌ Você precisa de 3 convites. No momento, você tem apenas **{invites_count}/3** convites validados.", ephemeral=True)
+            await interaction.followup.send(f" ❌ | Você precisa de 3 convites. No momento, você tem apenas **{invites_count}/3** convites validados.", ephemeral=True)
 
     # Botão com o emoji de Convite integrado
     @discord.ui.button(
