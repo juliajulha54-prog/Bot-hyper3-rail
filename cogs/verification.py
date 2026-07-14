@@ -116,53 +116,65 @@ class Verification(commands.Cog):
         self.bot = bot
         self.invite_cache = {}
 
-    # --- Funções do Banco de Dados MongoDB ---
+    # --- Funções do Banco de Dados MongoDB Corrigidas ---
 
     async def get_user_invites(self, user_id):
+        """Busca a quantidade de convites validados de um usuário no MongoDB com tratamento correto de await em coleções"""
         try:
-            data = await self.bot.db["verification_invites"].find_one({"user_id": str(user_id)})
+            collection = self.bot.db["verification_invites"]
+            data = await collection.find_one({"user_id": str(user_id)})
             if data:
                 return data.get("invites_count", 0)
         except Exception as e:
-            print(f"Erro ao buscar convites no MongoDB: {e}")
+            print(f"❌ Erro ao buscar convites no MongoDB: {e}")
         return 0
 
     async def update_user_invites(self, user_id, increment_value):
+        """Aumenta ou diminui os convites de um usuário no MongoDB"""
         try:
-            await self.bot.db["verification_invites"].update_one(
+            collection = self.bot.db["verification_invites"]
+            await collection.update_one(
                 {"user_id": str(user_id)},
                 {"$inc": {"invites_count": increment_value}},
                 upsert=True
             )
+            print(f"💾 Banco Atualizado: {user_id} modificado em {increment_value} pontos.")
         except Exception as e:
-            print(f"Erro ao atualizar convites no MongoDB: {e}")
+            print(f"❌ Erro ao atualizar convites no MongoDB: {e}")
 
     async def get_referred_by(self, member_id):
+        """Busca quem convidou o membro recém-chegado no MongoDB"""
         try:
-            data = await self.bot.db["verification_referrals"].find_one({"member_id": str(member_id)})
+            collection = self.bot.db["verification_referrals"]
+            data = await collection.find_one({"member_id": str(member_id)})
             if data:
                 return data.get("inviter_id")
         except Exception as e:
-            print(f"Erro ao buscar indicação no MongoDB: {e}")
+            print(f"❌ Erro ao buscar indicação no MongoDB: {e}")
         return None
 
     async def set_referred_by(self, member_id, inviter_id):
+        """Registra a relação de quem convidou quem no MongoDB"""
         try:
-            await self.bot.db["verification_referrals"].update_one(
+            collection = self.bot.db["verification_referrals"]
+            await collection.update_one(
                 {"member_id": str(member_id)},
                 {"$set": {"inviter_id": str(inviter_id)}},
                 upsert=True
             )
+            print(f"💾 Indicação Registrada: Membro {member_id} convidado por {inviter_id}")
         except Exception as e:
-            print(f"Erro ao definir indicação no MongoDB: {e}")
+            print(f"❌ Erro ao definir indicação no MongoDB: {e}")
 
     async def remove_referred_by(self, member_id):
+        """Remove a indicação do banco MongoDB e retorna o ID de quem o convidou"""
         try:
-            data = await self.bot.db["verification_referrals"].find_one_and_delete({"member_id": str(member_id)})
+            collection = self.bot.db["verification_referrals"]
+            data = await collection.find_one_and_delete({"member_id": str(member_id)})
             if data:
                 return data.get("inviter_id")
         except Exception as e:
-            print(f"Erro ao remover indicação no MongoDB: {e}")
+            print(f"❌ Erro ao remover indicação no MongoDB: {e}")
         return None
 
     async def cog_load(self):
@@ -213,13 +225,11 @@ class Verification(commands.Cog):
     async def on_member_join(self, member):
         print(f"👤 Membro entrou: {member.name} ({member.id})")
         try:
-            # Buscamos a lista atual de convites direto do servidor para comparar
             current_invites = await member.guild.invites()
             
             for invite in current_invites:
                 cached = self.invite_cache.get(invite.code)
                 
-                # Se o convite está no cache e o número de usos subiu:
                 if cached and invite.uses > cached["uses"]:
                     inviter_id = str(cached["inviter"])
                     member_id = str(member.id)
@@ -249,8 +259,9 @@ class Verification(commands.Cog):
         inviter_id = await self.remove_referred_by(member_id)
         if inviter_id:
             try:
+                collection = self.bot.db["verification_invites"]
                 # Garante que o valor não fique menor que zero na redução
-                await self.bot.db["verification_invites"].update_one(
+                await collection.update_one(
                     {"user_id": str(inviter_id)},
                     [{"$set": {"invites_count": {"$max": [0, {"$subtract": ["$invites_count", 1]}]}}}]
                 )
@@ -290,7 +301,29 @@ class Verification(commands.Cog):
         await channel.send(embed=embed, view=VerificationView(self.bot))
         await interaction.response.send_message(f"✅ Embed de verificação configurada e enviada no canal <#{CHANNEL_ID}>!", ephemeral=True)
 
+    # --- Comando Slash para Resetar a contagem de convites ---
+
+    @app_commands.command(name="resetar_convites", description="Limpa/Reseta a contagem de convites do banco de dados MongoDB.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def resetar_convites(self, interaction: discord.Interaction, usuario: discord.User = None):
+        """Reseta os convites de um usuário específico ou de TODOS do banco de dados"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if usuario:
+                # Reseta apenas o usuário informado
+                await self.bot.db["verification_invites"].delete_one({"user_id": str(usuario.id)})
+                await self.bot.db["verification_referrals"].delete_many({"inviter_id": str(usuario.id)})
+                await interaction.followup.send(f"🧹 | Os convites de {usuario.mention} foram completamente resetados no MongoDB!", ephemeral=True)
+            else:
+                # Reseta TODAS as coleções do sistema de convites do banco
+                await self.bot.db["verification_invites"].drop()
+                await self.bot.db["verification_referrals"].drop()
+                await interaction.followup.send("🧹 | **Todas as contagens de convites** de todos os usuários foram completamente resetadas do MongoDB!", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ | Ocorreu um erro ao tentar resetar os dados no MongoDB: `{e}`", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-        
+            
