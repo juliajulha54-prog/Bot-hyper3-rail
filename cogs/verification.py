@@ -44,7 +44,7 @@ class VerificationView(discord.ui.View):
             await interaction.followup.send("❌ | Sistema temporariamente indisponível.", ephemeral=True)
             return
             
-        # Puxa os convites do MongoDB de forma assíncrona
+        # Busca a quantidade de convites direto no MongoDB (usando await de forma correta)
         invites_count = await cog.get_user_invites(member.id)
         
         if invites_count >= 3:
@@ -65,7 +65,11 @@ class VerificationView(discord.ui.View):
     )
     async def my_invites(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = self.bot.get_cog("Verification")
-        invites_count = await cog.get_user_invites(interaction.user.id) if cog else 0
+        if not cog:
+            await interaction.response.send_message("❌ | Sistema temporariamente indisponível.", ephemeral=True)
+            return
+
+        invites_count = await cog.get_user_invites(interaction.user.id)
         await interaction.response.send_message(f"{EMOJI_CONVITE} | Você possui atualmente **{invites_count}** convites validados.", ephemeral=True)
 
     # Botão com o emoji de Link (🔗) integrado
@@ -118,44 +122,59 @@ class Verification(commands.Cog):
     # --- Funções do Banco de Dados MongoDB ---
 
     async def get_user_invites(self, user_id):
-        """Busca a quantidade de convites validados de um usuário no Mongo"""
-        data = await self.bot.db["verification_invites"].find_one({"user_id": str(user_id)})
-        if data:
-            return data.get("invites_count", 0)
+        """Busca a quantidade de convites validados de um usuário no MongoDB"""
+        try:
+            data = await self.bot.db["verification_invites"].find_one({"user_id": str(user_id)})
+            if data:
+                return data.get("invites_count", 0)
+        except Exception as e:
+            print(f"Erro ao buscar convites no MongoDB: {e}")
         return 0
 
     async def update_user_invites(self, user_id, increment_value):
-        """Aumenta ou diminui os convites de um usuário no Mongo"""
-        await self.bot.db["verification_invites"].update_one(
-            {"user_id": str(user_id)},
-            {"$inc": {"invites_count": increment_value}},
-            upsert=True
-        )
+        """Aumenta ou diminui os convites de um usuário no MongoDB"""
+        try:
+            await self.bot.db["verification_invites"].update_one(
+                {"user_id": str(user_id)},
+                {"$inc": {"invites_count": increment_value}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Erro ao atualizar convites no MongoDB: {e}")
 
     async def get_referred_by(self, member_id):
-        """Busca quem convidou o membro recém-chegado"""
-        data = await self.bot.db["verification_referrals"].find_one({"member_id": str(member_id)})
-        if data:
-            return data.get("inviter_id")
+        """Busca quem convidou o membro recém-chegado no MongoDB"""
+        try:
+            data = await self.bot.db["verification_referrals"].find_one({"member_id": str(member_id)})
+            if data:
+                return data.get("inviter_id")
+        except Exception as e:
+            print(f"Erro ao buscar indicação no MongoDB: {e}")
         return None
 
     async def set_referred_by(self, member_id, inviter_id):
-        """Registra a relação de quem convidou quem no Mongo"""
-        await self.bot.db["verification_referrals"].update_one(
-            {"member_id": str(member_id)},
-            {"$set": {"inviter_id": str(inviter_id)}},
-            upsert=True
-        )
+        """Registra a relação de quem convidou quem no MongoDB"""
+        try:
+            await self.bot.db["verification_referrals"].update_one(
+                {"member_id": str(member_id)},
+                {"$set": {"inviter_id": str(inviter_id)}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Erro ao definir indicação no MongoDB: {e}")
 
     async def remove_referred_by(self, member_id):
-        """Remove a indicação do banco e retorna o ID de quem o convidou (se existir)"""
-        data = await self.bot.db["verification_referrals"].find_one_and_delete({"member_id": str(member_id)})
-        if data:
-            return data.get("inviter_id")
+        """Remove a indicação do banco MongoDB e retorna o ID de quem o convidou"""
+        try:
+            data = await self.bot.db["verification_referrals"].find_one_and_delete({"member_id": str(member_id)})
+            if data:
+                return data.get("inviter_id")
+        except Exception as e:
+            print(f"Erro ao remover indicação no MongoDB: {e}")
         return None
 
     async def cog_load(self):
-        # Registra a view persistente passando o bot como argumento
+        # Torna a view persistente registrando-a no bot global e passando o bot
         self.bot.add_view(VerificationView(self.bot))
         self.bot.loop.create_task(self.load_all_invites())
 
@@ -200,7 +219,7 @@ class Verification(commands.Cog):
                     if inviter_id == member_id:
                         break  # Evita autoverificação
                         
-                    # Registra quem convidou quem no banco de dados MongoDB
+                    # Registra no MongoDB
                     await self.set_referred_by(member_id, inviter_id)
                     await self.update_user_invites(inviter_id, 1)
                     
@@ -213,14 +232,17 @@ class Verification(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         member_id = str(member.id)
-        # Se quem saiu foi convidado por alguém, desconta o ponto
+        # Se quem saiu foi convidado por alguém, desconta o ponto no MongoDB
         inviter_id = await self.remove_referred_by(member_id)
         if inviter_id:
-            # Garante que o valor não fique negativo utilizando find_one_and_update com limite mínimo
-            await self.bot.db["verification_invites"].update_one(
-                {"user_id": str(inviter_id)},
-                [{"$set": {"invites_count": {"$max": [0, {"$subtract": ["$invites_count", 1]}]}}}]
-            )
+            try:
+                # Garante que o valor não fique menor que zero na redução
+                await self.bot.db["verification_invites"].update_one(
+                    {"user_id": str(inviter_id)},
+                    [{"$set": {"invites_count": {"$max": [0, {"$subtract": ["$invites_count", 1]}]}}}]
+                )
+            except Exception as e:
+                print(f"Erro ao remover convite no MongoDB: {e}")
 
     # --- Comando Slash para enviar o Painel ---
 
@@ -234,7 +256,7 @@ class Verification(commands.Cog):
             await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
             return
 
-        # Nova descrição exata formatada com os IDs de emojis fornecidos
+        # Descrição exata formatada com os IDs de emojis fornecidos
         descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
 > Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
 # <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
@@ -259,64 +281,4 @@ class Verification(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Verification(bot))
-        al específico configurado pelo ID
-        channel = self.bot.get_channel(CHANNEL_ID)
-        
-        if not channel:
-            await interaction.response.send_message(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
-            return
-
-        # Nova descrição exata formatada com os IDs de emojis fornecidos
-        descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
-> Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
-# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
-> - :package: Acesso aos presets e project files para AE & AMZ 
-> - :clapper: Recursos de edição & Tutoriais:
- CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
-> - :tools: Categoria de suporte para editores
-> - :fire: Conteúdos & clipes exclusivos
-# <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites: 
-> - Para ver seus convites, clique no botão "Meus convites"
-> - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
--# <:prints:1526358671691612200> Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
-
-        embed = discord.Embed(
-            description=descrição_completa,
-            color=discord.Color.blue()
-        )
-        
-        await channel.send(embed=embed, view=VerificationView())
-        await interaction.response.send_message(f"✅ Embed de verificação configurada e enviada no canal <#{CHANNEL_ID}>!", ephemeral=True)
-
-
-async def setup(bot):
-    await bot.add_cog(Verification(bot))
-                e(f"❌ Não encontrei o canal com o ID `{CHANNEL_ID}`. Verifique as permissões do bot.", ephemeral=True)
-            return
-
-        # Nova descrição exata formatada com os IDs de emojis fornecidos
-        descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
-> Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
-# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
-> - :package: Acesso aos presets e project files para AE & AMZ 
-> - :clapper: Recursos de edição & Tutoriais:
- CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
-> - :tools: Categoria de suporte para editores
-> - :fire: Conteúdos & clipes exclusivos
-# <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites: 
-> - Para ver seus convites, clique no botão "Meus convites"
-> - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
--# <:prints:1526358671691612200> Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
-
-        embed = discord.Embed(
-            description=descrição_completa,
-            color=discord.Color.blue()
-        )
-        
-        await channel.send(embed=embed, view=VerificationView())
-        await interaction.response.send_message(f"✅ Embed de verificação configurada e enviada no canal <#{CHANNEL_ID}>!", ephemeral=True)
-
-
-async def setup(bot):
-    await bot.add_cog(Verification(bot))
-            
+    
