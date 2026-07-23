@@ -290,7 +290,7 @@ class Verification(commands.Cog):
 # <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites:
 > - Clique em "Meus convites" para ver seu progresso.
 > - Clique em "Criar convite" para gerar seu próprio link.
--# <:prints:1526358671691612200> Se necessário, anexe prints como prova ou tire dúvidas no tópico abaixo, o suporte é voluntário, não perturbe mencionando membros da staff, tenha paciência e aguarde."""
+-# <:prints:1526358671691612200> Se necessário, anexe prints como prova ou tire dúvidas no tópico abaixo, o suporte e as respostas a sua dúvida é voluntário, não perturbe mencionando membros da Staff, tenha paciência e aguarde."""
 
         embed = discord.Embed(
             description=descrição_completa,
