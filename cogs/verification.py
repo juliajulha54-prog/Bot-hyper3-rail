@@ -4,7 +4,7 @@ from discord import app_commands
 
 # IDs fornecidos
 ROLE_ID = 1524804424352927845   # ID do cargo que o usuário ganhará
-CHANNEL_ID = 1526281178934542337  # ID do canal onde a embed será enviada
+CHANNEL_ID = 1516842771053547610  # ID do canal onde a embed será enviada
 
 # Emojis personalizados para as mensagens e botões
 EMOJI_CONVITE = "<:convite:1526352250837143552>"
@@ -281,17 +281,16 @@ class Verification(commands.Cog):
             return
 
         descrição_completa = """# <:topic1:1526287141775343656> <:convite:1526352250837143552> Convide 3 pessoas
-> Convide 3 pessoas usando seu convite, não importa se são Editores ou não. Após atingir a meta de 3 convites, clique no botão abaixo "Validar verificação".
-# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Depois de verificar:
-> - :package: Acesso aos presets e project files para AE & AMZ 
-> - :clapper: Recursos de edição & Tutoriais:
- CC`S, Packs, Fontes, Overlays, Clipes, Packs de Edit AMV, Pack de Edit woodl e outros, músicas, etc.
-> - :tools: Categoria de suporte para editores
-> - :fire: Conteúdos & clipes exclusivos
-# <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites: 
-> - Para ver seus convites, clique no botão "Meus convites"
-> - Você também poderá, caso queira, criar o seu próprio convite, clicando no botão "Criar convite".
--# <:prints:1526358671691612200> Certifique-se de que realmente mandou o convite para 3 pessoas, você pode, caso queira anexar prints como provas, ou tirar suas dúvidas no tópico abaixo."""
+> - Convide 3 pessoas usando seu convite. Ao atingir a meta, clique no botão "Validar verificação".
+# <:topicopen:1526287216954052719> <:verify:1526360202197209128> Após verificar:
+
+> - 📦 Acesso aos Presets & Project Files (AE & AMZ)
+> - 🎬 Recursos de edição: CC's, Packs, Fontes, Overlays, Clipes, Músicas e muito mais recursos premium.
+> - 🛠️ Suporte completo para editores.
+# <:topicopen:1526287216954052719> <:__:1526354605028413440> Como ver seus convites:
+> - Clique em "Meus convites" para ver seu progresso.
+> - Clique em "Criar convite" para gerar seu próprio link.
+-# <:prints:1526358671691612200> Se necessário, anexe prints como prova ou tire dúvidas no tópico abaixo, o suporte é voluntário, não perturbe mencionando membros da staff, tenha paciência e aguarde."""
 
         embed = discord.Embed(
             description=descrição_completa,
