@@ -94,7 +94,7 @@ class VerificationView(discord.ui.View):
 
         if convite_existente:
             await interaction.response.send_message(
-                content=f"⚠️ | Você já possui um convite criado! Use o seu link:\nhttps://discord.gg/{convite_existente}", 
+                content=f"⚠️ | Você já possui um convite criado! Use o seu link:`\nhttps://discord.gg/{convite_existente}`/n(BASTA CLICAR NO NOME PRETO PARA COPIAR)", 
                 ephemeral=True
             )
             return
