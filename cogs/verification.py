@@ -94,7 +94,7 @@ class VerificationView(discord.ui.View):
 
         if convite_existente:
             await interaction.response.send_message(
-                content=f"⚠️ | Você já possui um convite criado! Use o seu link:`\nhttps://discord.gg/{convite_existente}` (BASTA CLICAR NO NOME PRETO PARA COPIAR)", 
+                content=f"⚠️ | Você já possui um convite criado! Use o seu link:`\nhttps://discord.gg/{convite_existente}`\n(BASTA CLICAR NO NOME PRETO PARA COPIAR)", 
                 ephemeral=True
             )
             return
@@ -107,7 +107,7 @@ class VerificationView(discord.ui.View):
                 "inviter": user_id
             }
                 
-            await interaction.response.send_message(f"🔗 | Aqui está o seu convite exclusivo:\n`{invite.url}` (BASTA CLICAR NO NOME PRETO PARA COPIAR)", ephemeral=True)
+            await interaction.response.send_message(f"🔗 | Aqui está o seu convite exclusivo:\n`{invite.url}`\n(BASTA CLICAR NO NOME PRETO PARA COPIAR)", ephemeral=True)
         except Exception:
             await interaction.response.send_message("❌ | Não consegui criar um convite neste canal. Certifique-se de que eu tenho permissão para 'Criar Convites'.", ephemeral=True)
 
